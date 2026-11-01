@@ -47,6 +47,7 @@ func main() {
 	progressMode := flag.String("progress", "auto", "progress line: auto, always, or never")
 	sortMode := flag.String("sort", "priority", "recommendation order: priority or size")
 	excludeFile := flag.String("exclude-file", "", "read exclusions from a text file")
+	noConfig := flag.Bool("no-config", false, "do not load the default exclusion config")
 	var exclusionArgs exclusionFlags
 	flag.Var(&exclusionArgs.dirs, "exclude", "exclude a directory subtree (repeatable)")
 	flag.Var(&exclusionArgs.globs, "exclude-glob", "exclude a glob pattern (repeatable)")
@@ -54,6 +55,7 @@ func main() {
 	flag.Var(&exclusionArgs.names, "exclude-name", "exclude a filename (repeatable)")
 	flag.Parse()
 	exclusionArgs.config = *excludeFile
+	exclusionArgs.noConfig = *noConfig
 
 	autoInteractive := shouldAutoInteractive(flag.NFlag(), flag.NArg(), isConsole(os.Stdin), isConsole(os.Stdout))
 	if autoInteractive {
@@ -111,10 +113,13 @@ func main() {
 	stdoutColor := newColorizer(os.Stdout, *colorMode)
 	stderrColor := newColorizer(os.Stderr, *colorMode)
 
-	exclusionRules, customRules, buildErr := buildExclusionRules(exclusionArgs)
+	exclusionRules, customRules, configSource, configRules, buildErr := buildExclusionRules(exclusionArgs)
 	if buildErr != nil {
 		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), buildErr)
 		os.Exit(2)
+	}
+	if configSource != "" {
+		fmt.Fprintf(os.Stderr, "exclusions: loaded %d rules from %s\n", configRules, configSource)
 	}
 	cfg := scan.Options{
 		Root:       *root,

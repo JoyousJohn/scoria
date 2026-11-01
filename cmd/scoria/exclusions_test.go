@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,11 +47,12 @@ func TestParseExclusionFileRejectsUnknownDirective(t *testing.T) {
 }
 
 func TestBuildExclusionRulesAddsCustomRulesToPreset(t *testing.T) {
-	all, custom, err := buildExclusionRules(exclusionFlags{
-		dirs:  stringList{`C:\Temp`},
-		globs: stringList{"*.bak"},
-		exts:  stringList{".log"},
-		names: stringList{"Thumbs.db"},
+	all, custom, source, configRules, err := buildExclusionRules(exclusionFlags{
+		dirs:     stringList{`C:\Temp`},
+		globs:    stringList{"*.bak"},
+		exts:     stringList{".log"},
+		names:    stringList{"Thumbs.db"},
+		noConfig: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,5 +62,86 @@ func TestBuildExclusionRulesAddsCustomRulesToPreset(t *testing.T) {
 	}
 	if len(all) != len(exclude.DefaultRules())+4 {
 		t.Fatalf("all = %d", len(all))
+	}
+	if source != "" || configRules != 0 {
+		t.Fatalf("unexpected config: %q %d", source, configRules)
+	}
+}
+
+func TestBuildExclusionRulesLoadsDefaultConfig(t *testing.T) {
+	configRoot := t.TempDir()
+	t.Setenv("APPDATA", configRoot)
+	configDir := filepath.Join(configRoot, "Scoria")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(configDir, "exclusions.txt")
+	writeExclusionTestFile(t, configPath, "ext .bak\n")
+
+	all, custom, source, configRules, err := buildExclusionRules(exclusionFlags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != configPath || configRules != 1 {
+		t.Fatalf("config = %q %d", source, configRules)
+	}
+	if len(custom) != 1 || len(all) != len(exclude.DefaultRules())+1 {
+		t.Fatalf("rules = %d custom=%d", len(all), len(custom))
+	}
+}
+
+func TestBuildExclusionRulesExplicitConfigReplacesDefault(t *testing.T) {
+	configRoot := t.TempDir()
+	t.Setenv("APPDATA", configRoot)
+	configDir := filepath.Join(configRoot, "Scoria")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeExclusionTestFile(t, filepath.Join(configDir, "exclusions.txt"), "ext .bak\n")
+	explicit := filepath.Join(t.TempDir(), "explicit.txt")
+	writeExclusionTestFile(t, explicit, "ext .log\n")
+
+	_, custom, source, configRules, err := buildExclusionRules(exclusionFlags{config: explicit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != explicit || configRules != 1 {
+		t.Fatalf("config = %q %d", source, configRules)
+	}
+	if len(custom) != 1 || custom[0].Pattern != ".log" {
+		t.Fatalf("custom = %#v", custom)
+	}
+}
+
+func TestBuildExclusionRulesNoConfigSkipsDefault(t *testing.T) {
+	configRoot := t.TempDir()
+	t.Setenv("APPDATA", configRoot)
+	configDir := filepath.Join(configRoot, "Scoria")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeExclusionTestFile(t, filepath.Join(configDir, "exclusions.txt"), "ext .bak\n")
+
+	_, custom, source, configRules, err := buildExclusionRules(exclusionFlags{noConfig: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(custom) != 0 || source != "" || configRules != 0 {
+		t.Fatalf("custom=%d source=%q rules=%d", len(custom), source, configRules)
+	}
+}
+
+func writeExclusionTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(content); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

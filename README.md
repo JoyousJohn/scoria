@@ -106,6 +106,7 @@ non-interactively.
 | `-exclude-ext` | exclude a file extension (repeatable) |
 | `-exclude-name` | exclude an exact filename (repeatable) |
 | `-exclude-file` | read exclusions from a text file |
+| `-no-config` | do not load the default `%APPDATA%\Scoria\exclusions.txt` |
 | `-interactive` | prompt for options, then offer a post-scan priority/size sort toggle |
 | `-low-integrity` | lower the process to low mandatory integrity before scanning; file report output is disabled |
 | `-sort` | recommendation order: `priority` (default) or `size` |
@@ -205,6 +206,11 @@ name Thumbs.db
 Relative `dir` entries in a config file are resolved relative to that file. The
 sensitive preset is always on and cannot be disabled. If a custom rule matches
 nothing, Scoria prints a warning after the scan.
+
+If `-exclude-file` is omitted, Scoria loads `%APPDATA%\Scoria\exclusions.txt` when it
+exists. It never creates that file. An explicit `-exclude-file` replaces the default
+rather than merging with it, and `-no-config` disables the default lookup. When a
+config is loaded, Scoria prints its path and rule count to stderr.
 
 ## Read-only evidence
 

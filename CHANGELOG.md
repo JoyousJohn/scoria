@@ -9,6 +9,8 @@
   path-free payload.
 - Custom exclusions via `-exclude`, `-exclude-glob`, `-exclude-ext`,
   `-exclude-name`, and `-exclude-file`.
+- Default exclusion config lookup at `%APPDATA%\Scoria\exclusions.txt`, disabled with
+  `-no-config`.
 - Optional directory-pattern discovery with `-ai-discover`; sends aggregate basenames
   only, and suggestions are never applied automatically.
 

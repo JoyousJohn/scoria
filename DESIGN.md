@@ -128,6 +128,10 @@ Custom rules support directory subtrees, globs, extensions, and exact filenames 
 repeatable flags or a readable config file. They are filtered at enumeration time,
 reported per rule, and warned about when a custom rule matches nothing.
 
+If no config is passed explicitly, Scoria reads `%APPDATA%\Scoria\exclusions.txt` when
+it exists. It never creates the file. An explicit `-exclude-file` replaces the default,
+and `-no-config` disables the lookup.
+
 Protected paths include Windows, Program Files, System Volume Information,
 `$Recycle.Bin`, root Recovery, Windows.old, pagefile, hiberfil, and swapfile. They are
 filtered from recommendations; they are not silently removed from totals unless they

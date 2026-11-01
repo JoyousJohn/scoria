@@ -28,14 +28,15 @@ func (s *stringList) Set(value string) error {
 }
 
 type exclusionFlags struct {
-	dirs   stringList
-	globs  stringList
-	exts   stringList
-	names  stringList
-	config string
+	dirs     stringList
+	globs    stringList
+	exts     stringList
+	names    stringList
+	config   string
+	noConfig bool
 }
 
-func buildExclusionRules(flags exclusionFlags) ([]exclude.Rule, []exclude.Rule, error) {
+func buildExclusionRules(flags exclusionFlags) ([]exclude.Rule, []exclude.Rule, string, int, error) {
 	all := exclude.DefaultRules()
 	custom := make([]exclude.Rule, 0)
 
@@ -43,7 +44,7 @@ func buildExclusionRules(flags exclusionFlags) ([]exclude.Rule, []exclude.Rule, 
 		if !strings.Contains(value, "%") {
 			absolute, err := filepath.Abs(value)
 			if err != nil {
-				return nil, nil, fmt.Errorf("exclude: resolve %q: %w", value, err)
+				return nil, nil, "", 0, fmt.Errorf("exclude: resolve %q: %w", value, err)
 			}
 			value = absolute
 		}
@@ -58,19 +59,46 @@ func buildExclusionRules(flags exclusionFlags) ([]exclude.Rule, []exclude.Rule, 
 	for _, value := range flags.names {
 		custom = append(custom, exclude.Rule{Kind: exclude.Name, Pattern: value})
 	}
-	if flags.config != "" {
-		fromFile, err := loadExclusionFile(flags.config)
-		if err != nil {
-			return nil, nil, err
+
+	configPath := flags.config
+	if configPath == "" && !flags.noConfig {
+		candidate, err := defaultExclusionFile()
+		if err == nil {
+			info, statErr := os.Stat(candidate)
+			switch {
+			case statErr == nil && info.Mode().IsRegular():
+				configPath = candidate
+			case statErr == nil:
+				return nil, nil, "", 0, fmt.Errorf("exclude-config: %s is not a regular file", candidate)
+			case !os.IsNotExist(statErr):
+				return nil, nil, "", 0, fmt.Errorf("exclude-config: %w", statErr)
+			}
 		}
+	}
+
+	configRules := 0
+	if configPath != "" {
+		fromFile, err := loadExclusionFile(configPath)
+		if err != nil {
+			return nil, nil, "", 0, err
+		}
+		configRules = len(fromFile)
 		custom = append(custom, fromFile...)
 	}
 
 	all = append(all, custom...)
 	if _, err := exclude.Compile(all); err != nil {
-		return nil, nil, err
+		return nil, nil, "", 0, err
 	}
-	return all, custom, nil
+	return all, custom, configPath, configRules, nil
+}
+
+func defaultExclusionFile() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "Scoria", "exclusions.txt"), nil
 }
 
 func loadExclusionFile(path string) ([]exclude.Rule, error) {
