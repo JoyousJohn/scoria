@@ -40,6 +40,12 @@ func main() {
 	sortMode := flag.String("sort", "priority", "recommendation order: priority or size")
 	flag.Parse()
 
+	autoInteractive := shouldAutoInteractive(flag.NFlag(), flag.NArg(), isConsole(os.Stdin), isConsole(os.Stdout))
+	if autoInteractive {
+		*interactive = true
+		*pause = true
+	}
+
 	if !validColorMode(*colorMode) {
 		fmt.Fprintf(os.Stderr, "scoria: invalid -color %q (want auto, always, or never)\n", *colorMode)
 		os.Exit(2)
@@ -414,6 +420,10 @@ func humanBytes(n int64) string {
 
 func openInBrowser(path string) error {
 	return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+}
+
+func shouldAutoInteractive(nflags, nargs int, stdinConsole, stdoutConsole bool) bool {
+	return nflags == 0 && nargs == 0 && stdinConsole && stdoutConsole
 }
 
 func pauseIfRequested(enabled bool) {

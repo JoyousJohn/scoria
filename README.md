@@ -76,6 +76,10 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 .\dist\scoria.exe -root C:\Users\me -low-integrity
 ```
 
+Double-clicking the exe, or running it with no arguments in a console, starts
+interactive setup and waits for Enter before exiting. Pass any flag to run
+non-interactively.
+
 | Flag | Meaning |
 |---|---|
 | `-root` | directory to scan (default `.`) |
@@ -89,7 +93,7 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 | `-json` | write the versioned digest to stdout |
 | `-html` | write a self-contained HTML report to this path; `-` writes to stdout |
 | `-open` | open the report in the default browser (default `true`) |
-| `-pause` | wait for Enter before exiting; useful for double-clicked runs |
+| `-pause` | wait for Enter before exiting; automatic for no-argument console runs |
 | `-color` | `auto`, `always`, or `never` |
 | `-progress` | progress line: `auto`, `always`, or `never` |
 

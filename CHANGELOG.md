@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-11-01
 
 ### Added
 
-- `-pause` waits for Enter before exiting, for double-clicked runs.
+- `-pause` waits for Enter before exiting.
+- Double-clicking the exe, or running it with no arguments in a console, starts
+  interactive setup and pauses before exit.
 
 ## 0.1.0 - 2026-11-01
 
