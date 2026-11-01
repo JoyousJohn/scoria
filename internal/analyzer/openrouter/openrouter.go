@@ -38,6 +38,26 @@ Rules:
 - Never say a file is safe to delete. Say what it appears to be and what the user should verify.
 - Do not mention paths that are not in the payload.`
 
+const discoverySystemPrompt = `You are the discovery layer for Scoria, a read-only disk scanner.
+
+The JSON input contains aggregate directory basenames, extension classes, scan totals,
+and the rules already covered. It contains no paths, filenames, usernames, or roots.
+
+Propose directory-name patterns that commonly indicate generated, cache, or build data
+and are not already covered by existing_rules.
+
+Return strict JSON only, with this shape:
+{"patterns":[{"kind":"dir-basename","name":"DerivedData","confidence":"medium","reason":"..."}]}
+
+Rules:
+- Only use names that appear in directory_names.
+- Do not invent names.
+- Do not propose names already covered by existing_rules.
+- Confidence must be low, medium, or high.
+- Explain what the directory usually contains and what the user should verify.
+- Never say a directory is safe to delete.
+- Return at most 10 patterns.`
+
 type Config struct {
 	APIKey     string
 	Model      string
@@ -76,6 +96,10 @@ type chatCompletion struct {
 
 type modelResponse struct {
 	Findings []analyzer.Finding `json:"findings"`
+}
+
+type discoveryResponse struct {
+	Patterns []analyzer.DiscoveryFinding `json:"patterns"`
 }
 
 func New(cfg Config) (*Client, error) {
@@ -135,26 +159,63 @@ func (c *Client) Analyze(ctx context.Context, payload analyzer.Payload) (analyze
 	if len(payload.Candidates) == 0 {
 		return analyzer.Result{Analyzer: "openrouter", Model: c.model, Findings: []analyzer.Finding{}}, nil
 	}
-
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return analyzer.Result{}, fmt.Errorf("openrouter: encode payload: %w", err)
 	}
+	content, err := c.chat(ctx, systemPrompt, string(payloadJSON))
+	if err != nil {
+		return analyzer.Result{}, err
+	}
+	var response modelResponse
+	if err := json.Unmarshal([]byte(content), &response); err != nil {
+		return analyzer.Result{}, fmt.Errorf("openrouter: model response was not valid JSON")
+	}
+	return analyzer.Validate(payload, analyzer.Result{
+		Analyzer: "openrouter",
+		Model:    c.model,
+		Findings: response.Findings,
+	})
+}
 
+func (c *Client) Discover(ctx context.Context, payload analyzer.DiscoveryPayload) (analyzer.DiscoveryResult, error) {
+	if len(payload.DirectoryNames) == 0 {
+		return analyzer.DiscoveryResult{Analyzer: "openrouter", Model: c.model, Patterns: []analyzer.DiscoveryFinding{}}, nil
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return analyzer.DiscoveryResult{}, fmt.Errorf("openrouter: encode discovery payload: %w", err)
+	}
+	content, err := c.chat(ctx, discoverySystemPrompt, string(payloadJSON))
+	if err != nil {
+		return analyzer.DiscoveryResult{}, err
+	}
+	var response discoveryResponse
+	if err := json.Unmarshal([]byte(content), &response); err != nil {
+		return analyzer.DiscoveryResult{}, fmt.Errorf("openrouter: discovery response was not valid JSON")
+	}
+	return analyzer.ValidateDiscovery(payload, analyzer.DiscoveryResult{
+		Analyzer: "openrouter",
+		Model:    c.model,
+		Patterns: response.Patterns,
+	})
+}
+
+func (c *Client) chat(ctx context.Context, system, user string) (string, error) {
 	requestBody, err := json.Marshal(chatRequest{
 		Model: c.model,
 		Messages: []chatMessage{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: string(payloadJSON)},
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
 		},
 	})
 	if err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: encode request: %w", err)
+		return "", fmt.Errorf("openrouter: encode request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: create request: %w", err)
+		return "", fmt.Errorf("openrouter: create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.key)
 	req.Header.Set("Content-Type", "application/json")
@@ -164,40 +225,33 @@ func (c *Client) Analyze(ctx context.Context, payload analyzer.Payload) (analyze
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: request failed: %w", err)
+		return "", fmt.Errorf("openrouter: request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: read response: %w", err)
+		return "", fmt.Errorf("openrouter: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return analyzer.Result{}, statusError(resp.StatusCode)
+		return "", statusError(resp.StatusCode)
 	}
 
 	var completion chatCompletion
 	if err := json.Unmarshal(body, &completion); err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: invalid response JSON")
+		return "", fmt.Errorf("openrouter: invalid response JSON")
 	}
 	if completion.Error != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: provider returned an error")
+		return "", fmt.Errorf("openrouter: provider returned an error")
 	}
 	if len(completion.Choices) == 0 {
-		return analyzer.Result{}, fmt.Errorf("openrouter: response contained no choices")
+		return "", fmt.Errorf("openrouter: response contained no choices")
 	}
-
 	content := stripCodeFence(strings.TrimSpace(completion.Choices[0].Message.Content))
-	var response modelResponse
-	if err := json.Unmarshal([]byte(content), &response); err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: model response was not valid JSON")
+	if content == "" {
+		return "", fmt.Errorf("openrouter: response contained no content")
 	}
-
-	return analyzer.Validate(payload, analyzer.Result{
-		Analyzer: "openrouter",
-		Model:    c.model,
-		Findings: response.Findings,
-	})
+	return content, nil
 }
 
 func statusError(status int) error {

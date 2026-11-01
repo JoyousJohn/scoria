@@ -9,6 +9,8 @@
   path-free payload.
 - Custom exclusions via `-exclude`, `-exclude-glob`, `-exclude-ext`,
   `-exclude-name`, and `-exclude-file`.
+- Optional directory-pattern discovery with `-ai-discover`; sends aggregate basenames
+  only, and suggestions are never applied automatically.
 
 ## 0.1.2 - 2026-11-01
 

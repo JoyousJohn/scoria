@@ -10,8 +10,8 @@ The product premise is structural: **it cannot delete, move, or rename anything.
 
 - No `DeleteFile`, `MoveFile`, `SHFileOperation`, `NtSetInformationFile`, `RegDeleteKey`,
   or `GENERIC_WRITE` in the scanner.
-- No network access, telemetry, or crash reporting by default. `-ai` is the only
-  network path, and it is explicit.
+- No network access, telemetry, or crash reporting by default. `-ai` and
+  `-ai-discover` are the only network paths, and they are explicit.
 - Metadata-only by default. `-dupes` is the only content-reading path, and it is opt-in.
 - Exclusions are filtered at enumeration time, before paths enter totals, logs, the
   digest, or the report.
@@ -180,6 +180,12 @@ against the candidate set, and protected paths are rejected regardless of model 
 
 The offline payload builder and rules-only analyzer live in `internal/analyzer`.
 `-ai-preview` prints the payload and exits without making a network request.
+
+The discovery mode sends aggregate directory basenames, extension classes, and the
+existing rule names, never paths. The model may propose directory-name patterns, but
+the local validator accepts only names present in the payload and rejects names already
+covered by built-in rules. Suggestions are shown for review and are never applied
+automatically.
 
 ## License
 

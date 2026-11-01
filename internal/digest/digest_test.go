@@ -43,6 +43,10 @@ func sample() *Digest {
 			Analyzer: "openrouter", Model: "openai/test",
 			Findings: []AnalysisFinding{{ID: "c1", Title: "Generated directory: node_modules", Rank: 1, Explanation: "Verify before acting."}},
 		},
+		Discovery: &Discovery{
+			Analyzer: "openrouter", Model: "openai/test",
+			Patterns: []DiscoveryFinding{{Kind: "dir-basename", Name: "DerivedData", Files: 2, Bytes: 300, Confidence: "medium", Reason: "Xcode build cache"}},
+		},
 		DuplicateCheck: &DuplicateCheck{
 			Candidates: 3, Hashed: 2, BytesRead: 4096, ReadErrors: 1, SkippedProtected: 2, SkippedHardlinks: 1,
 		},

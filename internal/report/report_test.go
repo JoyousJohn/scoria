@@ -39,6 +39,10 @@ func sampleDigest() *digest.Digest {
 			Analyzer: "openrouter", Model: "openai/test",
 			Findings: []digest.AnalysisFinding{{ID: "c1", Title: "Generated directory: node_modules", Rank: 1, Explanation: "Verify before acting."}},
 		},
+		Discovery: &digest.Discovery{
+			Analyzer: "openrouter", Model: "openai/test",
+			Patterns: []digest.DiscoveryFinding{{Kind: "dir-basename", Name: "DerivedData", Files: 2, Bytes: 300, Confidence: "medium", Reason: "Xcode build cache"}},
+		},
 		DuplicateCheck: &digest.DuplicateCheck{
 			Candidates: 3, Hashed: 2, BytesRead: 4096, ReadErrors: 1, SkippedProtected: 2, SkippedHardlinks: 1,
 		},
@@ -64,6 +68,7 @@ func TestRenderIncludesReportSections(t *testing.T) {
 		`data-sort="size"`,
 		"Duplicate verification",
 		"Cloud analysis",
+		"Suggested directory patterns",
 		"Protected paths",
 		"Nothing was deleted, moved, or renamed.",
 	} {

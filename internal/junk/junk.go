@@ -1,6 +1,9 @@
 package junk
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 const (
 	NodeModules = "node_modules"
@@ -54,4 +57,18 @@ func IsGenerated(kind string) bool {
 	default:
 		return false
 	}
+}
+
+func Names() []string {
+	seen := make(map[string]struct{}, len(names))
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }

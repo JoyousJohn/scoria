@@ -108,6 +108,21 @@ type Analysis struct {
 	Findings []AnalysisFinding `json:"findings"`
 }
 
+type DiscoveryFinding struct {
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Files      uint64 `json:"files"`
+	Bytes      int64  `json:"bytes"`
+	Confidence string `json:"confidence"`
+	Reason     string `json:"reason"`
+}
+
+type Discovery struct {
+	Analyzer string             `json:"analyzer"`
+	Model    string             `json:"model,omitempty"`
+	Patterns []DiscoveryFinding `json:"patterns"`
+}
+
 type Digest struct {
 	Version         int              `json:"version"`
 	GeneratedAt     time.Time        `json:"generated_at"`
@@ -124,6 +139,7 @@ type Digest struct {
 	Recommendations []Recommendation `json:"recommendations"`
 	DuplicateCheck  *DuplicateCheck  `json:"duplicate_check,omitempty"`
 	Analysis        *Analysis        `json:"analysis,omitempty"`
+	Discovery       *Discovery       `json:"discovery,omitempty"`
 }
 
 func New(root string, generatedAt time.Time, agg *aggregate.Aggregate, scan Scan) *Digest {

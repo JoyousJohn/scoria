@@ -220,6 +220,7 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border
   <p class="root"><code>{{.Root}}</code></p>
   <p class="lede">{{if .DuplicateCheck}}Scoria read metadata and verified duplicate candidates by hashing file contents. Nothing was changed or removed.{{else}}Scoria read metadata only. Nothing was changed or removed.{{end}}</p>
   {{if .Analysis}}<p class="warn">A redacted, path-free candidate payload was sent to {{.Analysis.Analyzer}}{{if .Analysis.Model}} ({{.Analysis.Model}}){{end}} for ranking and explanation. No files were changed.</p>{{end}}
+  {{if .Discovery}}<p class="warn">A redacted, name-only directory summary was sent to {{.Discovery.Analyzer}}{{if .Discovery.Model}} ({{.Discovery.Model}}){{end}} to propose patterns. No files were changed.</p>{{end}}
   <p class="warn">Every recommendation is a review candidate, not a deletion plan. Verify before acting.</p>
 </header>
 
@@ -284,6 +285,18 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border
     <thead><tr><th class="n">Rank</th><th>Candidate</th><th>Explanation</th></tr></thead>
     <tbody>{{range .Analysis.Findings}}<tr><td class="n">{{.Rank}}</td><td><code>{{.ID}}</code> {{.Title}}</td><td>{{.Explanation}}</td></tr>{{end}}</tbody>
   </table>
+</section>
+{{end}}
+
+{{if .Discovery}}
+<section>
+  <h2>Suggested directory patterns</h2>
+  <p class="muted">{{.Discovery.Analyzer}}{{if .Discovery.Model}} · {{.Discovery.Model}}{{end}}</p>
+  <table>
+    <thead><tr><th>Name</th><th class="n">Files</th><th class="n">Size</th><th>Confidence</th><th>Reason</th></tr></thead>
+    <tbody>{{range .Discovery.Patterns}}<tr><td><code>{{.Name}}</code></td><td class="n">{{num .Files}}</td><td class="n">{{bytes .Bytes}}</td><td><span class="badge {{.Confidence}}">{{.Confidence}}</span></td><td>{{.Reason}}</td></tr>{{end}}</tbody>
+  </table>
+  <p class="note">These are pattern suggestions, not built-in recommendations. Review before adding them as exclusions or rules.</p>
 </section>
 {{end}}
 

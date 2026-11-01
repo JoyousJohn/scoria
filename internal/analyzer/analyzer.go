@@ -124,20 +124,24 @@ func Validate(payload Payload, result Result) (Result, error) {
 	return result, nil
 }
 
+func scanSummary(doc *digest.Digest) ScanSummary {
+	return ScanSummary{
+		Entries:        doc.Totals.Entries,
+		UniqueFiles:    doc.Totals.UniqueFiles,
+		Files:          doc.Totals.Files,
+		Directories:    doc.Totals.Directories,
+		LogicalBytes:   doc.Totals.LogicalBytes,
+		UniqueBytes:    doc.Totals.UniqueBytes,
+		EmptyFiles:     doc.Totals.EmptyFiles,
+		HardlinkExtra:  doc.Totals.HardlinkExtra,
+		ContentsHashed: doc.DuplicateCheck != nil,
+	}
+}
+
 func BuildPayload(doc *digest.Digest) Payload {
 	payload := Payload{
-		Version: PayloadVersion,
-		Scan: ScanSummary{
-			Entries:        doc.Totals.Entries,
-			UniqueFiles:    doc.Totals.UniqueFiles,
-			Files:          doc.Totals.Files,
-			Directories:    doc.Totals.Directories,
-			LogicalBytes:   doc.Totals.LogicalBytes,
-			UniqueBytes:    doc.Totals.UniqueBytes,
-			EmptyFiles:     doc.Totals.EmptyFiles,
-			HardlinkExtra:  doc.Totals.HardlinkExtra,
-			ContentsHashed: doc.DuplicateCheck != nil,
-		},
+		Version:    PayloadVersion,
+		Scan:       scanSummary(doc),
 		Extensions: make([]Extension, 0, min(len(doc.Extensions), 20)),
 		Candidates: make([]Candidate, 0, len(doc.Recommendations)),
 	}

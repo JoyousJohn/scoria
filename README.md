@@ -74,6 +74,12 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 $env:SCORIA_API_KEY = "sk-or-v1-..."
 .\dist\scoria.exe -root C:\Users\me -ai -model openai/gpt-4o-mini
 
+# inspect the directory-name discovery payload; no network
+.\dist\scoria.exe -root C:\Users\me -ai-discover-preview
+
+# ask OpenRouter to suggest missed directory patterns
+.\dist\scoria.exe -root C:\Users\me -ai-discover -model openai/gpt-4o-mini
+
 # self-contained HTML report, opened in the default browser
 .\dist\scoria.exe -root C:\Users\me -html scoria-report.html
 
@@ -106,6 +112,8 @@ non-interactively.
 | `-json` | write the versioned digest to stdout |
 | `-ai-preview` | print the redacted, path-free analyzer payload and exit; no network |
 | `-ai` | run the optional OpenRouter analyzer; requires a key and `-model` |
+| `-ai-discover` | propose directory-name patterns through OpenRouter |
+| `-ai-discover-preview` | print the redacted directory-name payload and exit; no network |
 | `-model` | OpenRouter model ID, for example `openai/gpt-4o-mini` |
 | `-html` | write a self-contained HTML report to this path; `-` writes to stdout |
 | `-open` | open the report in the default browser (default `true`) |
@@ -145,11 +153,14 @@ Free space and size-on-disk are not guessed. Totals are logical sizes, which is 
   process cannot write to most of the user profile, even if the scanner has a bug.
   File report output is disabled in this mode; `-html -` still works through the
   inherited stdout handle.
-- No network access unless `-ai` is explicitly used; the default scan and
-  `-ai-preview` are offline.
+- No network access unless `-ai` or `-ai-discover` is explicitly used; the default
+  scan, `-ai-preview`, and `-ai-discover-preview` are offline.
 - `-ai` sends a redacted, path-free candidate payload to OpenRouter and the upstream
   model provider. The key is read from `SCORIA_API_KEY` or `OPENROUTER_API_KEY` and is
   never logged.
+- `-ai-discover` sends aggregate directory **basenames** and extension classes, never
+  paths. Directory names can still reveal project names; inspect the payload with
+  `-ai-discover-preview` first. Suggestions are not applied automatically.
 - No telemetry, no crash reports.
 - No delete, move, rename, registry-write, or shell file-operation APIs.
 - Excluded and sensitive paths are filtered before aggregation. The sensitive preset
@@ -251,9 +262,13 @@ paths. Reject any returned ID that is not in the candidate set.
 opaque candidate IDs, rule IDs, coarse size buckets, and aggregates, but no root,
 absolute paths, or recommendation examples. It makes no network request.
 
-`-ai` is the only network path. It requires `SCORIA_API_KEY` or `OPENROUTER_API_KEY`
-and `-model`, sends the preview payload to OpenRouter, and accepts only validated
-candidate IDs.
+`-ai-discover-preview` prints the separate directory-name discovery payload and exits.
+It contains aggregate basenames, extension classes, and existing rule names, but no
+paths.
+
+`-ai` and `-ai-discover` are the network paths. They require `SCORIA_API_KEY` or
+`OPENROUTER_API_KEY` and `-model`, send only validated preview payloads to OpenRouter,
+and accept only validated candidate IDs or directory names.
 
 Do not auto-delete based on this output. Require human confirmation. Do not use
 `-interactive` in automation. Remember that `-dupes` reads candidate file contents,

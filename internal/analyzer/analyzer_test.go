@@ -91,3 +91,67 @@ func TestSizeBucket(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscoveryCollectorAggregatesAncestorNames(t *testing.T) {
+	c := NewDiscoveryCollector(`C:\root`)
+	c.Sink(`C:\root\project\node_modules\pkg\a.js`, 100, time.Time{})
+	c.Sink(`C:\root\project\node_modules\pkg\b.js`, 50, time.Time{})
+	c.Sink(`C:\root\DerivedData\Build\x.bin`, 200, time.Time{})
+	c.Sink(`C:\root\Windows\System32\secret.dll`, 999, time.Time{})
+
+	names := c.Result(10)
+	if len(names) == 0 {
+		t.Fatal("no names")
+	}
+	if names[0].Name != "DerivedData" && names[0].Name != "Build" {
+		t.Fatalf("top name = %#v", names[0])
+	}
+	for _, name := range names {
+		if name.Name == "Windows" || name.Name == "System32" {
+			t.Fatalf("protected path leaked into discovery: %#v", name)
+		}
+	}
+}
+
+func TestBuildDiscoveryPayloadOmitsPaths(t *testing.T) {
+	payload := BuildDiscoveryPayload(sampleDigest(), []DirectoryName{
+		{Name: "DerivedData", Files: 2, Bytes: 300},
+		{Name: "node_modules", Files: 1, Bytes: 100},
+	})
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	if strings.Contains(text, "Ada") || strings.Contains(text, `C:\Users`) {
+		t.Fatalf("payload leaked a path: %s", text)
+	}
+	if len(payload.DirectoryNames) != 1 || payload.DirectoryNames[0].Name != "DerivedData" {
+		t.Fatalf("directory names = %#v", payload.DirectoryNames)
+	}
+}
+
+func TestValidateDiscovery(t *testing.T) {
+	payload := DiscoveryPayload{DirectoryNames: []DirectoryName{
+		{Name: "DerivedData", Files: 2, Bytes: 300},
+	}}
+	result, err := ValidateDiscovery(payload, DiscoveryResult{Patterns: []DiscoveryFinding{{
+		Kind: "dir-basename", Name: "DerivedData", Confidence: "medium", Reason: "Xcode build cache",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Patterns) != 1 || result.Patterns[0].Files != 2 || result.Patterns[0].Bytes != 300 {
+		t.Fatalf("patterns = %#v", result.Patterns)
+	}
+	if _, err := ValidateDiscovery(payload, DiscoveryResult{Patterns: []DiscoveryFinding{{
+		Kind: "dir-basename", Name: "node_modules", Confidence: "medium", Reason: "covered",
+	}}}); err == nil {
+		t.Fatal("expected covered-name error")
+	}
+	if _, err := ValidateDiscovery(payload, DiscoveryResult{Patterns: []DiscoveryFinding{{
+		Kind: "dir-basename", Name: "Unknown", Confidence: "medium", Reason: "x",
+	}}}); err == nil {
+		t.Fatal("expected unknown-name error")
+	}
+}

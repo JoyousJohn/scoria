@@ -176,3 +176,41 @@ func TestStripCodeFence(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestDiscoverSendsDiscoveryPayloadAndValidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if !strings.Contains(string(body), "directory_names") {
+			t.Errorf("missing discovery payload: %s", body)
+		}
+		response := chatCompletion{}
+		response.Choices = make([]struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		}, 1)
+		response.Choices[0].Message.Content = `{"patterns":[{"kind":"dir-basename","name":"DerivedData","confidence":"medium","reason":"Xcode build cache"}]}`
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	client, err := New(Config{APIKey: "test-key", Model: "openai/test", BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := analyzer.DiscoveryPayload{
+		Version:        analyzer.DiscoveryVersion,
+		DirectoryNames: []analyzer.DirectoryName{{Name: "DerivedData", Files: 2, Bytes: 300}},
+	}
+	result, err := client.Discover(context.Background(), payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Patterns) != 1 || result.Patterns[0].Name != "DerivedData" || result.Patterns[0].Bytes != 300 {
+		t.Fatalf("patterns = %#v", result.Patterns)
+	}
+}

@@ -35,6 +35,8 @@ func main() {
 	openReport := flag.Bool("open", true, "open the HTML report in the default browser")
 	aiPreview := flag.Bool("ai-preview", false, "print the redacted analyzer payload and exit (no network)")
 	useAI := flag.Bool("ai", false, "run the optional OpenRouter analyzer")
+	discover := flag.Bool("ai-discover", false, "propose directory patterns through OpenRouter")
+	discoveryPreview := flag.Bool("ai-discover-preview", false, "print the redacted discovery payload and exit (no network)")
 	model := flag.String("model", "", "OpenRouter model ID required with -ai")
 	pause := flag.Bool("pause", false, "wait for Enter before exiting")
 	countLinks := flag.Bool("links", true, "open each file read-only for accurate hard-link/unique totals (slower)")
@@ -75,25 +77,29 @@ func main() {
 		fmt.Fprintln(os.Stderr, "scoria: -html and -json cannot be combined")
 		os.Exit(2)
 	}
-	if *aiPreview && (*jsonOutput || *htmlPath != "") {
-		fmt.Fprintln(os.Stderr, "scoria: -ai-preview cannot be combined with -json or -html")
+	if *aiPreview && (*jsonOutput || *htmlPath != "" || *useAI || *discover || *discoveryPreview) {
+		fmt.Fprintln(os.Stderr, "scoria: -ai-preview cannot be combined with another output or AI mode")
+		os.Exit(2)
+	}
+	if *discoveryPreview && (*jsonOutput || *htmlPath != "" || *useAI || *aiPreview || *discover) {
+		fmt.Fprintln(os.Stderr, "scoria: -ai-discover-preview cannot be combined with another output or AI mode")
+		os.Exit(2)
+	}
+	if *useAI && *discover {
+		fmt.Fprintln(os.Stderr, "scoria: -ai and -ai-discover cannot be combined")
 		os.Exit(2)
 	}
 	apiKey := os.Getenv("SCORIA_API_KEY")
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENROUTER_API_KEY")
 	}
-	if *useAI {
-		if *aiPreview {
-			fmt.Fprintln(os.Stderr, "scoria: -ai and -ai-preview cannot be combined")
-			os.Exit(2)
-		}
+	if *useAI || *discover {
 		if strings.TrimSpace(*model) == "" {
-			fmt.Fprintln(os.Stderr, "scoria: -model is required with -ai")
+			fmt.Fprintln(os.Stderr, "scoria: -model is required with -ai or -ai-discover")
 			os.Exit(2)
 		}
 		if apiKey == "" {
-			fmt.Fprintln(os.Stderr, "scoria: set SCORIA_API_KEY or OPENROUTER_API_KEY for -ai")
+			fmt.Fprintln(os.Stderr, "scoria: set SCORIA_API_KEY or OPENROUTER_API_KEY for -ai or -ai-discover")
 			os.Exit(2)
 		}
 	}
@@ -225,6 +231,42 @@ func main() {
 		})
 	}
 
+	if *discover || *discoveryPreview {
+		names, err := runDiscovery(cfg, result.Root, progress.enabled)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		discoveryPayload := analyzer.BuildDiscoveryPayload(doc, names)
+		if *discoveryPreview {
+			fmt.Fprintln(os.Stderr, "discovery payload preview: no network request")
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			if err := enc.Encode(discoveryPayload); err != nil {
+				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+				os.Exit(2)
+			}
+			pauseIfRequested(*pause)
+			return
+		}
+		client, err := openrouter.New(openrouter.Config{
+			APIKey: apiKey,
+			Model:  *model,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "discovery: sending %s directory names to OpenRouter model %s\n",
+			commas(uint64(len(discoveryPayload.DirectoryNames))), *model)
+		discoveryResult, err := client.Discover(context.Background(), discoveryPayload)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s discovery failed: %v\n", stderrColor.yellow("warning:"), err)
+		} else {
+			doc.Discovery = digestDiscovery(discoveryResult)
+		}
+	}
+
 	if *useAI {
 		payload := analyzer.BuildPayload(doc)
 		if len(payload.Candidates) == 0 {
@@ -306,12 +348,29 @@ func main() {
 
 	printSummary(os.Stdout, stdoutColor, result, entriesPerSecond, cfg.TopN, cfg.CountLinks)
 	printRecommendations(os.Stdout, stdoutColor, recs, duplicateResult != nil)
+	printDiscovery(os.Stdout, stdoutColor, doc.Discovery)
 	printAnalysis(os.Stdout, stdoutColor, doc.Analysis)
 	printDuplicateStats(os.Stdout, stdoutColor, duplicateResult)
 	if *interactive && !jsonOut {
 		runSortMenu(input, os.Stdout, os.Stderr, stdoutColor, stderrColor, recs, duplicateResult != nil, *sortMode)
 	}
 	pauseIfRequested(*pause)
+}
+
+func printDiscovery(w io.Writer, c *colorizer, discovery *digest.Discovery) {
+	if discovery == nil {
+		return
+	}
+	header := "suggested directory patterns (" + discovery.Analyzer
+	if discovery.Model != "" {
+		header += ", " + discovery.Model
+	}
+	header += "; review before acting):"
+	fmt.Fprintf(w, "\n%s\n", c.bold(header))
+	for _, pattern := range discovery.Patterns {
+		fmt.Fprintf(w, "  %s  %s files  %s  [%s]\n", c.bold(pattern.Name), commas(pattern.Files), humanBytes(pattern.Bytes), pattern.Confidence)
+		fmt.Fprintf(w, "      %s\n", pattern.Reason)
+	}
 }
 
 func printAnalysis(w io.Writer, c *colorizer, analysis *digest.Analysis) {
@@ -345,6 +404,27 @@ func printDuplicateStats(w io.Writer, c *colorizer, result *dupes.Result) {
 		commas(result.SkippedProtected), commas(result.SkippedHardlinks))
 }
 
+func runDiscovery(cfg scan.Options, root string, progressEnabled bool) ([]analyzer.DirectoryName, error) {
+	collector := analyzer.NewDiscoveryCollector(root)
+	discoveryCfg := cfg
+	discoveryCfg.Root = root
+	discoveryCfg.TopN = 0
+	discoveryCfg.CountLinks = false
+	discoveryCfg.Progress = nil
+	discoveryCfg.FileSink = collector.Sink
+	discoveryProgress := &progressLine{out: os.Stderr, enabled: progressEnabled, label: "discovery"}
+	if discoveryProgress.enabled {
+		discoveryCfg.Progress = discoveryProgress.update
+	}
+	fmt.Fprintln(os.Stderr, "discovery: walking for directory-name aggregates")
+	_, err := scan.Walk(discoveryCfg)
+	discoveryProgress.finish()
+	if err != nil {
+		return nil, err
+	}
+	return collector.Result(200), nil
+}
+
 func digestAnalysis(result analyzer.Result, recs []digest.Recommendation) *digest.Analysis {
 	titles := make(map[string]string, len(recs))
 	for _, recommendation := range recs {
@@ -364,6 +444,25 @@ func digestAnalysis(result analyzer.Result, recs []digest.Recommendation) *diges
 		})
 	}
 	return analysis
+}
+
+func digestDiscovery(result analyzer.DiscoveryResult) *digest.Discovery {
+	discovery := &digest.Discovery{
+		Analyzer: result.Analyzer,
+		Model:    result.Model,
+		Patterns: make([]digest.DiscoveryFinding, 0, len(result.Patterns)),
+	}
+	for _, pattern := range result.Patterns {
+		discovery.Patterns = append(discovery.Patterns, digest.DiscoveryFinding{
+			Kind:       pattern.Kind,
+			Name:       pattern.Name,
+			Files:      pattern.Files,
+			Bytes:      pattern.Bytes,
+			Confidence: pattern.Confidence,
+			Reason:     pattern.Reason,
+		})
+	}
+	return discovery
 }
 
 func printRecommendations(w io.Writer, c *colorizer, recs []rules.Recommendation, contentsRead bool) {
