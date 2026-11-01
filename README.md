@@ -11,7 +11,8 @@ It cannot delete, move, or rename anything. It writes only the HTML report you
 explicitly request.
 
 Status: early v1, rules-first. No installer, no GUI framework, no telemetry. Network
-access is off by default; `-ai` is an explicit OpenRouter opt-in. Console, JSON, and
+access is off by default; `-ai` is an explicit opt-in (OpenRouter by default, or any
+OpenAI-compatible endpoint). Console, JSON, and
 self-contained HTML output. Windows 10 or later.
 
 ## What it does
@@ -74,10 +75,19 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 $env:SCORIA_API_KEY = "sk-or-v1-..."
 .\dist\scoria.exe -root C:\Users\me -ai -model openai/gpt-4o-mini
 
+# ...or any OpenAI-compatible endpoint (HTTPS required except loopback)
+$env:SCORIA_API_KEY = "provider-key"
+$env:SCORIA_BASE_URL = "https://your-endpoint.example/v1"
+.\dist\scoria.exe -root C:\Users\me -ai -model provider/model-id
+
+# built-in endpoint presets; -base-url still overrides
+.\dist\scoria.exe -provider list
+.\dist\scoria.exe -root C:\Users\me -ai -model gpt-4o-mini -provider openai
+
 # inspect the directory-name discovery payload; no network
 .\dist\scoria.exe -root C:\Users\me -ai-discover-preview
 
-# ask OpenRouter to suggest missed directory patterns
+# ask the analyzer to suggest missed directory patterns
 .\dist\scoria.exe -root C:\Users\me -ai-discover -model openai/gpt-4o-mini
 
 # self-contained HTML report, opened in the default browser
@@ -89,6 +99,10 @@ $env:SCORIA_API_KEY = "sk-or-v1-..."
 # lower the process to low integrity before scanning; console or JSON output only
 .\dist\scoria.exe -root C:\Users\me -low-integrity
 ```
+
+`-provider` is a shortcut for a known OpenAI-compatible base URL. Presets are
+conveniences, not endorsements; check the provider's docs for the current base URL
+and model IDs.
 
 Double-clicking the exe, or running it with no arguments in a console, starts the
 guided setup: scan root, depth (fast or hard-link counting), optional duplicate
@@ -114,10 +128,12 @@ to run non-interactively.
 | `-sort` | recommendation order: `priority` (default) or `size` |
 | `-json` | write the versioned digest to stdout |
 | `-ai-preview` | print the redacted, path-free analyzer payload and exit; no network |
-| `-ai` | run the optional OpenRouter analyzer; requires a key and `-model` |
-| `-ai-discover` | propose directory-name patterns through OpenRouter |
+| `-ai` | run the optional analyzer on redacted candidates; requires a key and `-model` |
+| `-ai-discover` | propose directory-name patterns through the analyzer |
 | `-ai-discover-preview` | print the redacted directory-name payload and exit; no network |
-| `-model` | OpenRouter model ID, for example `openai/gpt-4o-mini` |
+| `-model` | model ID for the selected endpoint, for example `openai/gpt-4o-mini` |
+| `-base-url` | OpenAI-compatible API base URL (default `https://openrouter.ai/api/v1`); also `SCORIA_BASE_URL`. Loopback endpoints may omit the key |
+| `-provider` | endpoint preset: `openrouter`, `openai`, `gemini`, `deepseek`, `together`, `fireworks`, `deepinfra`, `groq`; `-base-url` overrides; `-provider list` prints them |
 | `-html` | write a self-contained HTML report to this path; `-` writes to stdout |
 | `-open` | open the report in the default browser (default `true`) |
 | `-pause` | wait for Enter before exiting; automatic for no-argument console runs |
@@ -158,9 +174,11 @@ Free space and size-on-disk are not guessed. Totals are logical sizes, which is 
   inherited stdout handle.
 - No network access unless `-ai` or `-ai-discover` is explicitly used; the default
   scan, `-ai-preview`, and `-ai-discover-preview` are offline.
-- `-ai` sends a redacted, path-free candidate payload to OpenRouter and the upstream
-  model provider. The key is read from `SCORIA_API_KEY` or `OPENROUTER_API_KEY` and is
-  never logged.
+- `-ai` sends a redacted, path-free candidate payload to the endpoint selected by
+  `-base-url` or `SCORIA_BASE_URL` (OpenRouter by default) and its upstream model
+  provider. The key is read from `SCORIA_API_KEY` or `OPENROUTER_API_KEY` and is
+  never logged; it may be omitted for loopback endpoints. Plain HTTP is refused except
+  for loopback endpoints.
 - `-ai-discover` sends aggregate directory **basenames** and extension classes, never
   paths. Directory names can still reveal project names; inspect the payload with
   `-ai-discover-preview` first. Suggestions are not applied automatically.
@@ -275,8 +293,9 @@ It contains aggregate basenames, extension classes, and existing rule names, but
 paths.
 
 `-ai` and `-ai-discover` are the network paths. They require `SCORIA_API_KEY` or
-`OPENROUTER_API_KEY` and `-model`, send only validated preview payloads to OpenRouter,
-and accept only validated candidate IDs or directory names.
+`OPENROUTER_API_KEY` and `-model`, send only validated preview payloads to the endpoint
+selected by `-base-url` or `SCORIA_BASE_URL` (OpenRouter by default), and accept only
+validated candidate IDs or directory names.
 
 Do not auto-delete based on this output. Require human confirmation. Do not use
 `-interactive` in automation. Remember that `-dupes` reads candidate file contents,

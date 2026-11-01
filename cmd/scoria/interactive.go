@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/JoyousJohn/scoria/internal/analyzer/openrouter"
 )
 
 var errWizardQuit = errors.New("interactive setup cancelled")
@@ -30,6 +32,7 @@ type wizardOptions struct {
 	LowIntegrity bool
 	Exclusions   exclusionFlags
 	APIKey       string
+	BaseURL      string
 }
 
 func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions) (wizardOptions, error) {
@@ -78,7 +81,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, c.bold("Extra analysis (comma-separated; Enter for none):"))
 	fmt.Fprintln(out, "  1. Verify duplicates - hash same-size files >= 1 MiB (reads candidate contents)")
-	fmt.Fprintln(out, "  2. AI review         - send a redacted, path-free summary to OpenRouter")
+	fmt.Fprintln(out, "  2. AI review         - send a redacted, path-free summary to your configured AI endpoint")
 	dupes, ai, err := askAnalysis(r, out, c, opts.Dupes, opts.AI)
 	if err != nil {
 		return d, err
@@ -86,12 +89,17 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 	opts.Dupes = dupes
 	opts.AI = ai
 	if opts.AI {
-		if opts.APIKey == "" {
+		base, err := askProvider(r, out, c, opts.BaseURL)
+		if err != nil {
+			return d, err
+		}
+		opts.BaseURL = base
+		if opts.APIKey == "" && openrouter.KeyRequired(opts.BaseURL) {
 			fmt.Fprintln(out, c.yellow("AI review needs SCORIA_API_KEY or OPENROUTER_API_KEY; AI review is off."))
 			opts.AI = false
 		} else {
 			if strings.TrimSpace(opts.Model) == "" {
-				model, err := readLine(r, out, c, "OpenRouter model ID (blank skips AI review)", "")
+				model, err := readLine(r, out, c, "Model ID (blank skips AI review)", "")
 				if err != nil {
 					return d, err
 				}
@@ -313,6 +321,45 @@ func askAnalysis(r *bufio.Reader, out io.Writer, c *colorizer, defDupes, defAI b
 	}
 }
 
+func askProvider(r *bufio.Reader, out io.Writer, c *colorizer, current string) (string, error) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, c.bold("AI endpoint:"))
+	for i, preset := range providerPresets {
+		fmt.Fprintf(out, "  %d. %s (%s)\n", i+1, preset.name, preset.baseURL)
+	}
+	customIndex := len(providerPresets) + 1
+	fmt.Fprintf(out, "  %d. Custom base URL\n", customIndex)
+	choice, err := askMenu(r, out, c, "Provider", customIndex, providerIndexForBase(current))
+	if err != nil {
+		return "", err
+	}
+	if choice <= len(providerPresets) {
+		return providerPresets[choice-1].baseURL, nil
+	}
+	hint := ""
+	if current != "" && providerIndexForBase(current) == customIndex {
+		hint = current
+	}
+	for {
+		value, err := readLine(r, out, c, "Base URL", hint)
+		if err != nil {
+			return "", err
+		}
+		if value == "" {
+			value = hint
+		}
+		if value == "" {
+			fmt.Fprintln(out, c.yellow("A base URL is required."))
+			continue
+		}
+		if err := openrouter.ValidateBaseURL(value); err != nil {
+			fmt.Fprintf(out, "%s %v\n", c.red("Cannot use"), err)
+			continue
+		}
+		return strings.TrimSpace(value), nil
+	}
+}
+
 func askMenu(r *bufio.Reader, out io.Writer, c *colorizer, label string, max, def int) (int, error) {
 	for {
 		value, err := readLine(r, out, c, label, strconv.Itoa(def))
@@ -326,11 +373,7 @@ func askMenu(r *bufio.Reader, out io.Writer, c *colorizer, label string, max, de
 		if err == nil && n >= 1 && n <= max {
 			return n, nil
 		}
-		if max == 2 {
-			fmt.Fprintln(out, c.yellow("Please enter 1 or 2."))
-		} else {
-			fmt.Fprintln(out, c.yellow("Please enter 1, 2, or 3."))
-		}
+		fmt.Fprintf(out, c.yellow("Please enter a number from 1 to %d.\n"), max)
 	}
 }
 
@@ -528,7 +571,7 @@ func printPlan(out io.Writer, c *colorizer, o wizardOptions) {
 	fmt.Fprintf(out, "  %-12s %s\n", "Duplicates:", duplicates)
 	ai := "off"
 	if o.AI {
-		ai = o.Model + " (redacted payload)"
+		ai = o.Model + " via " + endpointLabel(o.BaseURL) + " (redacted payload)"
 	}
 	fmt.Fprintf(out, "  %-12s %s\n", "AI review:", ai)
 	fmt.Fprintf(out, "  %-12s %s\n", "Output:", describeOutput(o))

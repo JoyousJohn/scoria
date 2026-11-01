@@ -35,10 +35,12 @@ func main() {
 	htmlPath := flag.String("html", "", "write a self-contained HTML report to this path (- for stdout)")
 	openReport := flag.Bool("open", true, "open the HTML report in the default browser")
 	aiPreview := flag.Bool("ai-preview", false, "print the redacted analyzer payload and exit (no network)")
-	useAI := flag.Bool("ai", false, "run the optional OpenRouter analyzer")
-	discover := flag.Bool("ai-discover", false, "propose directory patterns through OpenRouter")
+	useAI := flag.Bool("ai", false, "run the optional analyzer on redacted candidates")
+	discover := flag.Bool("ai-discover", false, "propose directory patterns through the analyzer")
 	discoveryPreview := flag.Bool("ai-discover-preview", false, "print the redacted discovery payload and exit (no network)")
-	model := flag.String("model", "", "OpenRouter model ID required with -ai")
+	model := flag.String("model", "", "model ID for the selected endpoint (required with -ai)")
+	baseURL := flag.String("base-url", "", "OpenAI-compatible API base URL (default "+openrouter.DefaultBaseURL+")")
+	provider := flag.String("provider", "", "provider preset ("+providerIDs()+"); -base-url overrides")
 	pause := flag.Bool("pause", false, "wait for Enter before exiting")
 	countLinks := flag.Bool("links", true, "open each file read-only for accurate hard-link/unique totals (slower)")
 	verifyDupes := flag.Bool("dupes", false, "verify same-size duplicates >= 1 MiB by hashing candidates (reads candidate file contents)")
@@ -59,6 +61,12 @@ func main() {
 	exclusionArgs.noConfig = *noConfig
 
 	autoInteractive := shouldAutoInteractive(flag.NFlag(), flag.NArg(), isConsole(os.Stdin), isConsole(os.Stdout))
+	if strings.EqualFold(strings.TrimSpace(*provider), "list") {
+		for _, preset := range providerPresets {
+			fmt.Fprintf(os.Stdout, "%-10s %s\n", preset.id, preset.baseURL)
+		}
+		return
+	}
 	if autoInteractive {
 		*interactive = true
 		*pause = true
@@ -78,6 +86,14 @@ func main() {
 	if apiKey == "" {
 		apiKey = os.Getenv("OPENROUTER_API_KEY")
 	}
+	apiBase, baseErr := resolveProviderBase(*provider, *baseURL)
+	if baseErr != nil {
+		fmt.Fprintf(os.Stderr, "scoria: %v\n", baseErr)
+		os.Exit(2)
+	}
+	if apiBase == "" {
+		apiBase = strings.TrimSpace(os.Getenv("SCORIA_BASE_URL"))
+	}
 
 	var input *bufio.Reader
 	if *interactive {
@@ -96,6 +112,7 @@ func main() {
 			LowIntegrity: *lowIntegrity,
 			Exclusions:   exclusionArgs,
 			APIKey:       apiKey,
+			BaseURL:      apiBase,
 		})
 		if err != nil {
 			if errors.Is(err, errWizardQuit) {
@@ -143,8 +160,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "scoria: -model is required with -ai or -ai-discover")
 			os.Exit(2)
 		}
-		if apiKey == "" {
+		if apiKey == "" && openrouter.KeyRequired(apiBase) {
 			fmt.Fprintln(os.Stderr, "scoria: set SCORIA_API_KEY or OPENROUTER_API_KEY for -ai or -ai-discover")
+			os.Exit(2)
+		}
+		if err := openrouter.ValidateBaseURL(apiBase); err != nil {
+			fmt.Fprintln(os.Stderr, "scoria:", err)
 			os.Exit(2)
 		}
 	}
@@ -284,15 +305,16 @@ func main() {
 			return
 		}
 		client, err := openrouter.New(openrouter.Config{
-			APIKey: apiKey,
-			Model:  *model,
+			APIKey:  apiKey,
+			Model:   *model,
+			BaseURL: apiBase,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stderr, "discovery: sending %s directory names to OpenRouter model %s\n",
-			commas(uint64(len(discoveryPayload.DirectoryNames))), *model)
+		fmt.Fprintf(os.Stderr, "discovery: sending %s directory names to %s model %s\n",
+			commas(uint64(len(discoveryPayload.DirectoryNames))), endpointLabel(apiBase), *model)
 		discoveryResult, err := client.Discover(context.Background(), discoveryPayload)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s discovery failed: %v\n", stderrColor.yellow("warning:"), err)
@@ -307,15 +329,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow("cloud analysis: no candidates; request skipped"))
 		} else {
 			client, err := openrouter.New(openrouter.Config{
-				APIKey: apiKey,
-				Model:  *model,
+				APIKey:  apiKey,
+				Model:   *model,
+				BaseURL: apiBase,
 			})
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
 				os.Exit(2)
 			}
-			fmt.Fprintf(os.Stderr, "cloud analysis: sending %s candidates to OpenRouter model %s\n",
-				commas(uint64(len(payload.Candidates))), *model)
+			fmt.Fprintf(os.Stderr, "cloud analysis: sending %s candidates to %s model %s\n",
+				commas(uint64(len(payload.Candidates))), endpointLabel(apiBase), *model)
 			result, err := client.Analyze(context.Background(), payload)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s cloud analysis failed: %v\n", stderrColor.yellow("warning:"), err)

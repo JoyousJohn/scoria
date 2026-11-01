@@ -66,7 +66,7 @@ func TestAnalyzeSendsRedactedPayloadAndValidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Analyzer != "openrouter" || result.Model != "openai/test" {
+	if result.Analyzer != "openai-compatible" || result.Model != "openai/test" {
 		t.Fatalf("result = %#v", result)
 	}
 	if len(result.Findings) != 2 || result.Findings[0].ID != "c2" || result.Findings[0].Rank != 1 {
@@ -168,6 +168,57 @@ func TestAnalyzeTimesOut(t *testing.T) {
 func TestNewRejectsInsecureRemoteBaseURL(t *testing.T) {
 	if _, err := New(Config{APIKey: "test-key", Model: "openai/test", BaseURL: "http://example.com"}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestAnalyzerLabelFollowsBaseURL(t *testing.T) {
+	openRouter, err := New(Config{APIKey: "test-key", Model: "openai/test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if openRouter.Name() != "openrouter" {
+		t.Fatalf("name = %q, want openrouter", openRouter.Name())
+	}
+
+	custom, err := New(Config{APIKey: "test-key", Model: "openai/test", BaseURL: "https://api.example.com/v1/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if custom.Name() != "openai-compatible" {
+		t.Fatalf("name = %q, want openai-compatible", custom.Name())
+	}
+}
+
+func TestValidateBaseURL(t *testing.T) {
+	for _, base := range []string{"", DefaultBaseURL, "https://api.example.com/v1", "http://127.0.0.1:11434/v1"} {
+		if err := ValidateBaseURL(base); err != nil {
+			t.Fatalf("ValidateBaseURL(%q): %v", base, err)
+		}
+	}
+	for _, base := range []string{"http://example.com", "ftp://example.com", "https://"} {
+		if err := ValidateBaseURL(base); err == nil {
+			t.Fatalf("ValidateBaseURL(%q) should fail", base)
+		}
+	}
+}
+
+func TestKeyRequiredOnlyForNonLoopback(t *testing.T) {
+	for _, base := range []string{"", DefaultBaseURL, "https://api.example.com/v1"} {
+		if !KeyRequired(base) {
+			t.Fatalf("KeyRequired(%q) = false, want true", base)
+		}
+	}
+	if KeyRequired("http://localhost:11434/v1") {
+		t.Fatal("loopback should not require a key")
+	}
+}
+
+func TestNewAllowsKeylessLoopback(t *testing.T) {
+	if _, err := New(Config{Model: "local", BaseURL: "http://127.0.0.1:11434/v1"}); err != nil {
+		t.Fatalf("loopback without key: %v", err)
+	}
+	if _, err := New(Config{Model: "remote", BaseURL: "https://api.example.com/v1"}); err == nil {
+		t.Fatal("remote endpoint without key should fail")
 	}
 }
 

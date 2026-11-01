@@ -7,6 +7,13 @@
 - Offline analyzer interface, redacted payload builder, and `-ai-preview`.
 - Optional OpenRouter cloud analysis with `-ai` and `-model`; sends only the redacted
   path-free payload.
+- `-base-url` and `SCORIA_BASE_URL` select any OpenAI-compatible endpoint instead of
+  OpenRouter; non-loopback endpoints must use HTTPS and a key, while loopback endpoints
+  may use plain HTTP without one.
+- `-provider` selects a known OpenAI-compatible endpoint (`openrouter`, `openai`,
+  `gemini`, `deepseek`, `together`, `fireworks`, `deepinfra`, `groq`), and the guided
+  setup offers the same list with a custom URL option. Presets are conveniences;
+  `-base-url` still overrides.
 - Custom exclusions via `-exclude`, `-exclude-glob`, `-exclude-ext`,
   `-exclude-name`, and `-exclude-file`.
 - Default exclusion config lookup at `%APPDATA%\Scoria\exclusions.txt`, disabled with

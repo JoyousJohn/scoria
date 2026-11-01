@@ -70,6 +70,7 @@ type Client struct {
 	endpoint string
 	model    string
 	key      string
+	name     string
 	http     *http.Client
 }
 
@@ -103,30 +104,17 @@ type discoveryResponse struct {
 }
 
 func New(cfg Config) (*Client, error) {
-	if strings.TrimSpace(cfg.APIKey) == "" {
-		return nil, fmt.Errorf("openrouter: API key is required")
-	}
 	if strings.TrimSpace(cfg.Model) == "" {
-		return nil, fmt.Errorf("openrouter: model is required")
+		return nil, fmt.Errorf("analyzer: model is required")
 	}
 
-	base := cfg.BaseURL
-	if base == "" {
-		base = DefaultBaseURL
-	}
-	base = strings.TrimRight(base, "/")
-	parsed, err := url.Parse(base)
+	base, err := normalizeBaseURL(cfg.BaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("openrouter: invalid base URL: %w", err)
+		return nil, err
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("openrouter: base URL must be http or https")
-	}
-	if parsed.Scheme != "https" && !loopback(parsed.Hostname()) {
-		return nil, fmt.Errorf("openrouter: refusing non-HTTPS base URL for a non-loopback host")
-	}
-	if parsed.Host == "" {
-		return nil, fmt.Errorf("openrouter: base URL has no host")
+	key := strings.TrimSpace(cfg.APIKey)
+	if key == "" && KeyRequired(base) {
+		return nil, fmt.Errorf("analyzer: API key is required")
 	}
 
 	httpClient := cfg.HTTPClient
@@ -146,22 +134,69 @@ func New(cfg Config) (*Client, error) {
 	return &Client{
 		endpoint: base + "/chat/completions",
 		model:    strings.TrimSpace(cfg.Model),
-		key:      strings.TrimSpace(cfg.APIKey),
+		key:      key,
+		name:     labelFor(base),
 		http:     httpClient,
 	}, nil
 }
 
+func KeyRequired(raw string) bool {
+	base, err := normalizeBaseURL(raw)
+	if err != nil {
+		return true
+	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return true
+	}
+	return !loopback(parsed.Hostname())
+}
+
+func ValidateBaseURL(raw string) error {
+	_, err := normalizeBaseURL(raw)
+	return err
+}
+
+func normalizeBaseURL(raw string) (string, error) {
+	base := strings.TrimSpace(raw)
+	if base == "" {
+		base = DefaultBaseURL
+	}
+	base = strings.TrimRight(base, "/")
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return "", fmt.Errorf("analyzer: invalid base URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("analyzer: base URL must be http or https")
+	}
+	if parsed.Scheme != "https" && !loopback(parsed.Hostname()) {
+		return "", fmt.Errorf("analyzer: refusing non-HTTPS base URL for a non-loopback host")
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("analyzer: base URL has no host")
+	}
+	return base, nil
+}
+
+func labelFor(base string) string {
+	if strings.EqualFold(strings.TrimRight(base, "/"), DefaultBaseURL) {
+		return "openrouter"
+	}
+	return "openai-compatible"
+}
+
 func (c *Client) Name() string {
-	return "openrouter"
+	return c.name
 }
 
 func (c *Client) Analyze(ctx context.Context, payload analyzer.Payload) (analyzer.Result, error) {
 	if len(payload.Candidates) == 0 {
-		return analyzer.Result{Analyzer: "openrouter", Model: c.model, Findings: []analyzer.Finding{}}, nil
+		return analyzer.Result{Analyzer: c.name, Model: c.model, Findings: []analyzer.Finding{}}, nil
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: encode payload: %w", err)
+		return analyzer.Result{}, fmt.Errorf("analyzer: encode payload: %w", err)
 	}
 	content, err := c.chat(ctx, systemPrompt, string(payloadJSON))
 	if err != nil {
@@ -169,10 +204,10 @@ func (c *Client) Analyze(ctx context.Context, payload analyzer.Payload) (analyze
 	}
 	var response modelResponse
 	if err := json.Unmarshal([]byte(content), &response); err != nil {
-		return analyzer.Result{}, fmt.Errorf("openrouter: model response was not valid JSON")
+		return analyzer.Result{}, fmt.Errorf("analyzer: model response was not valid JSON")
 	}
 	return analyzer.Validate(payload, analyzer.Result{
-		Analyzer: "openrouter",
+		Analyzer: c.name,
 		Model:    c.model,
 		Findings: response.Findings,
 	})
@@ -180,11 +215,11 @@ func (c *Client) Analyze(ctx context.Context, payload analyzer.Payload) (analyze
 
 func (c *Client) Discover(ctx context.Context, payload analyzer.DiscoveryPayload) (analyzer.DiscoveryResult, error) {
 	if len(payload.DirectoryNames) == 0 {
-		return analyzer.DiscoveryResult{Analyzer: "openrouter", Model: c.model, Patterns: []analyzer.DiscoveryFinding{}}, nil
+		return analyzer.DiscoveryResult{Analyzer: c.name, Model: c.model, Patterns: []analyzer.DiscoveryFinding{}}, nil
 	}
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return analyzer.DiscoveryResult{}, fmt.Errorf("openrouter: encode discovery payload: %w", err)
+		return analyzer.DiscoveryResult{}, fmt.Errorf("analyzer: encode discovery payload: %w", err)
 	}
 	content, err := c.chat(ctx, discoverySystemPrompt, string(payloadJSON))
 	if err != nil {
@@ -192,10 +227,10 @@ func (c *Client) Discover(ctx context.Context, payload analyzer.DiscoveryPayload
 	}
 	var response discoveryResponse
 	if err := json.Unmarshal([]byte(content), &response); err != nil {
-		return analyzer.DiscoveryResult{}, fmt.Errorf("openrouter: discovery response was not valid JSON")
+		return analyzer.DiscoveryResult{}, fmt.Errorf("analyzer: discovery response was not valid JSON")
 	}
 	return analyzer.ValidateDiscovery(payload, analyzer.DiscoveryResult{
-		Analyzer: "openrouter",
+		Analyzer: c.name,
 		Model:    c.model,
 		Patterns: response.Patterns,
 	})
@@ -210,14 +245,16 @@ func (c *Client) chat(ctx context.Context, system, user string) (string, error) 
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("openrouter: encode request: %w", err)
+		return "", fmt.Errorf("analyzer: encode request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return "", fmt.Errorf("openrouter: create request: %w", err)
+		return "", fmt.Errorf("analyzer: create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.key)
+	if c.key != "" {
+		req.Header.Set("Authorization", "Bearer "+c.key)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "scoria")
@@ -225,13 +262,13 @@ func (c *Client) chat(ctx context.Context, system, user string) (string, error) 
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("openrouter: request failed: %w", err)
+		return "", fmt.Errorf("analyzer: request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return "", fmt.Errorf("openrouter: read response: %w", err)
+		return "", fmt.Errorf("analyzer: read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", statusError(resp.StatusCode)
@@ -239,17 +276,17 @@ func (c *Client) chat(ctx context.Context, system, user string) (string, error) 
 
 	var completion chatCompletion
 	if err := json.Unmarshal(body, &completion); err != nil {
-		return "", fmt.Errorf("openrouter: invalid response JSON")
+		return "", fmt.Errorf("analyzer: invalid response JSON")
 	}
 	if completion.Error != nil {
-		return "", fmt.Errorf("openrouter: provider returned an error")
+		return "", fmt.Errorf("analyzer: provider returned an error")
 	}
 	if len(completion.Choices) == 0 {
-		return "", fmt.Errorf("openrouter: response contained no choices")
+		return "", fmt.Errorf("analyzer: response contained no choices")
 	}
 	content := stripCodeFence(strings.TrimSpace(completion.Choices[0].Message.Content))
 	if content == "" {
-		return "", fmt.Errorf("openrouter: response contained no content")
+		return "", fmt.Errorf("analyzer: response contained no content")
 	}
 	return content, nil
 }
@@ -257,13 +294,13 @@ func (c *Client) chat(ctx context.Context, system, user string) (string, error) 
 func statusError(status int) error {
 	switch status {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("openrouter: request failed: invalid API key (401)")
+		return fmt.Errorf("analyzer: request failed: invalid API key (401)")
 	case http.StatusPaymentRequired:
-		return fmt.Errorf("openrouter: request failed: insufficient credits (402)")
+		return fmt.Errorf("analyzer: request failed: insufficient credits (402)")
 	case http.StatusTooManyRequests:
-		return fmt.Errorf("openrouter: request failed: rate limited (429)")
+		return fmt.Errorf("analyzer: request failed: rate limited (429)")
 	default:
-		return fmt.Errorf("openrouter: request failed with status %d", status)
+		return fmt.Errorf("analyzer: request failed with status %d", status)
 	}
 }
 

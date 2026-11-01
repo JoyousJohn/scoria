@@ -34,7 +34,7 @@ func TestPromptOptionsOverrides(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer
 	defaults := wizardOptions{Root: ".", Workers: 0, TopN: 20, CountLinks: true, Open: true}
-	input := dir + "\n2\n1,2\n2\n\n"
+	input := dir + "\n2\n1,2\n\n2\n\n"
 	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
 	if err != nil {
 		t.Fatalf("promptOptions: %v", err)
@@ -77,9 +77,9 @@ func TestPromptOptionsRetriesInvalidAnswers(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"Cannot use",
-		"Please enter 1 or 2.",
+		"Please enter a number from 1 to 2.",
 		"Please enter 1, 2, 1,2, or none.",
-		"Please enter 1, 2, or 3.",
+		"Please enter a number from 1 to 3.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("output missing %q: %q", want, text)
@@ -100,7 +100,7 @@ func TestPromptOptionsAIRequiresModel(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer
 	defaults := wizardOptions{Root: dir, Workers: 0, TopN: 20, CountLinks: true, Open: true, APIKey: "test-key"}
-	input := "\n1\n2\nopenai/gpt-4o-mini\n2\n\n"
+	input := "\n1\n2\n\nopenai/gpt-4o-mini\n2\n\n"
 	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
 	if err != nil {
 		t.Fatalf("promptOptions: %v", err)
@@ -113,11 +113,32 @@ func TestPromptOptionsAIRequiresModel(t *testing.T) {
 	}
 }
 
+func TestPromptOptionsAllowsKeylessLoopbackAI(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	defaults := wizardOptions{
+		Root:       dir,
+		Workers:    0,
+		TopN:       20,
+		CountLinks: true,
+		Open:       true,
+		BaseURL:    "http://127.0.0.1:11434/v1",
+	}
+	input := "\n1\n2\n\n\nlocal-model\n2\n\n"
+	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
+	if err != nil {
+		t.Fatalf("promptOptions: %v", err)
+	}
+	if !got.AI || got.Model != "local-model" {
+		t.Fatalf("AI = %v, model = %q", got.AI, got.Model)
+	}
+}
+
 func TestPromptOptionsBlankModelSkipsAI(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer
 	defaults := wizardOptions{Root: dir, Workers: 0, TopN: 20, CountLinks: true, Open: true, APIKey: "test-key"}
-	input := "\n1\n2\n\n2\n\n"
+	input := "\n1\n2\n\n\n2\n\n"
 	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
 	if err != nil {
 		t.Fatalf("promptOptions: %v", err)
@@ -195,6 +216,38 @@ func TestAskRootAcceptsDriveNumberAndQuotes(t *testing.T) {
 	}
 	if got != filepath.Clean(dir) {
 		t.Fatalf("root = %q, want %q", got, filepath.Clean(dir))
+	}
+}
+
+func TestPromptOptionsSelectsProviderPreset(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	defaults := wizardOptions{Root: dir, Workers: 0, TopN: 20, CountLinks: true, Open: true, APIKey: "test-key"}
+	input := "\n1\n2\n2\ngpt-4o\n2\n\n"
+	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
+	if err != nil {
+		t.Fatalf("promptOptions: %v", err)
+	}
+	if got.BaseURL != "https://api.openai.com/v1" {
+		t.Fatalf("base URL = %q", got.BaseURL)
+	}
+	if !got.AI || got.Model != "gpt-4o" {
+		t.Fatalf("AI = %v, model = %q", got.AI, got.Model)
+	}
+}
+
+func TestAskProviderCustomURLValidates(t *testing.T) {
+	var out bytes.Buffer
+	input := "9\nhttp://example.com\nhttp://127.0.0.1:8080/v1\n"
+	got, err := askProvider(bufio.NewReader(strings.NewReader(input)), &out, nil, "")
+	if err != nil {
+		t.Fatalf("askProvider: %v", err)
+	}
+	if got != "http://127.0.0.1:8080/v1" {
+		t.Fatalf("base = %q", got)
+	}
+	if !strings.Contains(out.String(), "refusing non-HTTPS") {
+		t.Fatalf("validation message absent: %q", out.String())
 	}
 }
 

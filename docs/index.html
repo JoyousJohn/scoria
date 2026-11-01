@@ -209,8 +209,10 @@ kernel32.dll
           <p>
             Network access is off by default. The optional <code>-ai</code> and
             <code>-ai-discover</code> analyzers send redacted, path-free payloads to OpenRouter
-            only when you ask. Inspect the exact JSON offline first with <code>-ai-preview</code>
-            or <code>-ai-discover-preview</code>. No telemetry, no crash reports.
+            by default, or to the OpenAI-compatible endpoint you select with
+            <code>-provider</code> or <code>-base-url</code>, and only when you ask. Inspect
+            the exact JSON offline first with <code>-ai-preview</code> or
+            <code>-ai-discover-preview</code>. No telemetry, no crash reports.
           </p>
         </div>
         <div class="card-meta">
@@ -671,7 +673,7 @@ name Thumbs.db</code></pre>
           <tr>
             <td><code>-ai</code></td>
             <td><code>false</code></td>
-            <td>Run the optional OpenRouter analyzer on redacted candidates; requires API key and <code>-model</code></td>
+            <td>Run the optional analyzer on redacted candidates; requires API key and <code>-model</code></td>
           </tr>
           <tr>
             <td><code>-ai-discover-preview</code></td>
@@ -681,12 +683,22 @@ name Thumbs.db</code></pre>
           <tr>
             <td><code>-ai-discover</code></td>
             <td><code>false</code></td>
-            <td>Propose directory-name patterns via OpenRouter; suggestions are never applied automatically</td>
+            <td>Propose directory-name patterns via the analyzer; suggestions are never applied automatically</td>
           </tr>
           <tr>
             <td><code>-model</code></td>
             <td>none</td>
-            <td>OpenRouter model ID (for example <code>openai/gpt-4o-mini</code>) used with <code>-ai</code> or <code>-ai-discover</code></td>
+            <td>Model ID for the selected endpoint (for example <code>openai/gpt-4o-mini</code>) used with <code>-ai</code> or <code>-ai-discover</code></td>
+          </tr>
+          <tr>
+            <td><code>-base-url</code></td>
+            <td><code>https://openrouter.ai/api/v1</code></td>
+            <td>OpenAI-compatible API base URL; plain HTTP and a missing key are allowed only for loopback. Also read from <code>SCORIA_BASE_URL</code></td>
+          </tr>
+          <tr>
+            <td><code>-provider</code></td>
+            <td>none</td>
+            <td>Endpoint preset: <code>openrouter</code>, <code>openai</code>, <code>gemini</code>, <code>deepseek</code>, <code>together</code>, <code>fireworks</code>, <code>deepinfra</code>, <code>groq</code>; <code>-base-url</code> overrides. <code>-provider list</code> prints them</td>
           </tr>
           <tr>
             <td><code>-pause</code></td>
