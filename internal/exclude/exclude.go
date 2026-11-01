@@ -13,6 +13,7 @@ const (
 	Subtree   Kind = "directory-subtree"
 	Glob      Kind = "glob"
 	Extension Kind = "extension"
+	Name      Kind = "name"
 )
 
 type Rule struct {
@@ -40,6 +41,7 @@ type Matcher struct {
 	subtrees   []compiled
 	globs      []compiled
 	extensions []compiled
+	names      []compiled
 	pathGlobs  bool
 }
 
@@ -75,6 +77,15 @@ func Compile(rules []Rule) (*Matcher, error) {
 				return nil, fmt.Errorf("exclude: invalid extension rule %q", rule.Pattern)
 			}
 			m.extensions = append(m.extensions, compiled{rule: rule, value: value})
+		case Name:
+			value := strings.ToLower(strings.TrimSpace(rule.Pattern))
+			if value == "" {
+				return nil, fmt.Errorf("exclude: empty name rule")
+			}
+			if strings.ContainsAny(value, `\/`) {
+				return nil, fmt.Errorf("exclude: name rule %q must be a bare filename", rule.Pattern)
+			}
+			m.names = append(m.names, compiled{rule: rule, value: value})
 		case Glob:
 			value := strings.ToLower(strings.ReplaceAll(rule.Pattern, `\`, "/"))
 			if value == "" {
@@ -106,12 +117,17 @@ func (m *Matcher) MatchDir(absPath, relPath string) (Rule, bool) {
 			return c.rule, true
 		}
 	}
-	if len(m.globs) == 0 {
-		return Rule{}, false
-	}
 	base := absPath
 	if i := strings.LastIndexAny(base, `\/`); i >= 0 {
 		base = base[i+1:]
+	}
+	for _, c := range m.names {
+		if strings.EqualFold(base, c.value) {
+			return c.rule, true
+		}
+	}
+	if len(m.globs) == 0 {
+		return Rule{}, false
 	}
 	rel := normalizeSlashes(relPath)
 	for _, c := range m.globs {
@@ -125,6 +141,11 @@ func (m *Matcher) MatchDir(absPath, relPath string) (Rule, bool) {
 func (m *Matcher) MatchFile(name, ext, relPath string) (Rule, bool) {
 	for _, c := range m.extensions {
 		if ext == c.value {
+			return c.rule, true
+		}
+	}
+	for _, c := range m.names {
+		if strings.EqualFold(name, c.value) {
 			return c.rule, true
 		}
 	}

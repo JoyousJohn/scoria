@@ -95,6 +95,11 @@ non-interactively.
 | `-top` | entries kept in each largest/oldest list; `0` disables the lists |
 | `-links` | open each file read-only for hard-link and unique-file totals (default `true`, slower) |
 | `-dupes` | verify same-size duplicates >= 1 MiB by hashing candidates; **reads candidate file contents** |
+| `-exclude` | exclude a directory subtree (repeatable) |
+| `-exclude-glob` | exclude a glob pattern (repeatable) |
+| `-exclude-ext` | exclude a file extension (repeatable) |
+| `-exclude-name` | exclude an exact filename (repeatable) |
+| `-exclude-file` | read exclusions from a text file |
 | `-interactive` | prompt for options, then offer a post-scan priority/size sort toggle |
 | `-low-integrity` | lower the process to low mandatory integrity before scanning; file report output is disabled |
 | `-sort` | recommendation order: `priority` (default) or `size` |
@@ -154,6 +159,41 @@ Free space and size-on-disk are not guessed. Totals are logical sizes, which is 
 Hard links are counted both ways: directory entries and unique file IDs. An excluded
 file with an unprotected second hard link can still appear under that second path;
 this is a filesystem property, not a scanner bug.
+
+## Custom exclusions
+
+```powershell
+.\dist\scoria.exe -root "$env:USERPROFILE" `
+  -exclude "D:\Projects\old" `
+  -exclude-glob "*.bak" `
+  -exclude-ext ".log" `
+  -exclude-name "Thumbs.db"
+```
+
+Rules are applied at enumeration time. Excluded files never enter totals,
+recommendations, the digest, or the report. An excluded directory is not descended
+into, so its contents and byte total are unknown; the report says “subtree not
+enumerated.”
+
+A repeatable, readable config file:
+
+```text
+# one rule per line
+dir  D:\Projects\old
+dir  "C:\Users\me\AppData\Local\Old App"
+glob *.bak
+ext  .log
+ext  .tmp
+name Thumbs.db
+```
+
+```powershell
+.\dist\scoria.exe -root "$env:USERPROFILE" -exclude-file .\exclusions.txt
+```
+
+Relative `dir` entries in a config file are resolved relative to that file. The
+sensitive preset is always on and cannot be disabled. If a custom rule matches
+nothing, Scoria prints a warning after the scan.
 
 ## Read-only evidence
 

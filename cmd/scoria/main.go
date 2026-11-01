@@ -44,7 +44,14 @@ func main() {
 	colorMode := flag.String("color", "auto", "color output: auto, always, or never")
 	progressMode := flag.String("progress", "auto", "progress line: auto, always, or never")
 	sortMode := flag.String("sort", "priority", "recommendation order: priority or size")
+	excludeFile := flag.String("exclude-file", "", "read exclusions from a text file")
+	var exclusionArgs exclusionFlags
+	flag.Var(&exclusionArgs.dirs, "exclude", "exclude a directory subtree (repeatable)")
+	flag.Var(&exclusionArgs.globs, "exclude-glob", "exclude a glob pattern (repeatable)")
+	flag.Var(&exclusionArgs.exts, "exclude-ext", "exclude a file extension (repeatable)")
+	flag.Var(&exclusionArgs.names, "exclude-name", "exclude a filename (repeatable)")
 	flag.Parse()
+	exclusionArgs.config = *excludeFile
 
 	autoInteractive := shouldAutoInteractive(flag.NFlag(), flag.NArg(), isConsole(os.Stdin), isConsole(os.Stdout))
 	if autoInteractive {
@@ -98,11 +105,17 @@ func main() {
 	stdoutColor := newColorizer(os.Stdout, *colorMode)
 	stderrColor := newColorizer(os.Stderr, *colorMode)
 
+	exclusionRules, customRules, buildErr := buildExclusionRules(exclusionArgs)
+	if buildErr != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), buildErr)
+		os.Exit(2)
+	}
 	cfg := scan.Options{
 		Root:       *root,
 		Workers:    *workers,
 		TopN:       *top,
 		CountLinks: *countLinks,
+		Exclusions: exclusionRules,
 	}
 	jsonOut := *jsonOutput
 	var input *bufio.Reader
@@ -137,6 +150,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
 		os.Exit(2)
 	}
+	warnExclusionRules(os.Stderr, stderrColor, customRules, result.Aggregate)
 
 	var duplicateResult *dupes.Result
 	if *verifyDupes {

@@ -96,3 +96,16 @@ func TestSensitivePresetMatchesExpandedPath(t *testing.T) {
 		t.Fatal("extension-only check must not match an unrelated file")
 	}
 }
+
+func TestNameMatchIsExactAndCaseInsensitive(t *testing.T) {
+	m := mustCompile(t, Rule{Kind: Name, Pattern: "Thumbs.db"})
+	if _, ok := m.MatchFile("THUMBS.DB", ".db", `x\THUMBS.DB`); !ok {
+		t.Fatal("expected name match")
+	}
+	if _, ok := m.MatchFile("thumbs.db.bak", ".bak", ""); ok {
+		t.Fatal("unexpected name match")
+	}
+	if _, ok := m.MatchDir(`C:\x\THUMBS.DB`, `x\THUMBS.DB`); !ok {
+		t.Fatal("expected directory name match")
+	}
+}

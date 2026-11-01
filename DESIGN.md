@@ -124,6 +124,10 @@ The sensitive preset is on by default and covers `.ssh`, common password-manager
 browser-profile directories, crypto wallets, and `.kdbx`, `.pem`, `.key`, and
 `wallet.dat`.
 
+Custom rules support directory subtrees, globs, extensions, and exact filenames through
+repeatable flags or a readable config file. They are filtered at enumeration time,
+reported per rule, and warned about when a custom rule matches nothing.
+
 Protected paths include Windows, Program Files, System Volume Information,
 `$Recycle.Bin`, root Recovery, Windows.old, pagefile, hiberfil, and swapfile. They are
 filtered from recommendations; they are not silently removed from totals unless they

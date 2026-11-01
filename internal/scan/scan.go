@@ -28,6 +28,7 @@ type Options struct {
 	Workers    int
 	TopN       int
 	CountLinks bool
+	Exclusions []exclude.Rule
 	Progress   func(Progress)
 	FileSink   func(path string, size int64, modTime time.Time)
 }
@@ -153,7 +154,11 @@ func Walk(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("scan: %s is not a directory", abs)
 	}
 
-	matcher, err := exclude.Compile(exclude.DefaultRules())
+	rules := opts.Exclusions
+	if rules == nil {
+		rules = exclude.DefaultRules()
+	}
+	matcher, err := exclude.Compile(rules)
 	if err != nil {
 		return nil, err
 	}

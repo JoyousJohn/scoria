@@ -7,6 +7,8 @@
 - Offline analyzer interface, redacted payload builder, and `-ai-preview`.
 - Optional OpenRouter cloud analysis with `-ai` and `-model`; sends only the redacted
   path-free payload.
+- Custom exclusions via `-exclude`, `-exclude-glob`, `-exclude-ext`,
+  `-exclude-name`, and `-exclude-file`.
 
 ## 0.1.2 - 2026-11-01
 
