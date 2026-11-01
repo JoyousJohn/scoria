@@ -62,8 +62,7 @@ n = entries only; unique files/bytes are reported as not computed (faster)`,
 		r,
 		out,
 		c,
-		"Top-N entries to keep in each largest/oldest list",
-		"  Does not limit the scan or totals; 0 disables the lists.",
+		"Top-N entries to keep in each largest/oldest list (0 disables; does not limit the scan)",
 		defaults.TopN,
 	)
 	if err != nil {
@@ -73,8 +72,7 @@ n = entries only; unique files/bytes are reported as not computed (faster)`,
 		r,
 		out,
 		c,
-		"Directory workers (0 = 2x logical CPUs)",
-		"  Directories are walked in parallel; each worker handles one directory at a time.",
+		"Directory workers (0 = 2x logical CPUs; one directory per worker)",
 		defaults.Workers,
 	)
 	if err != nil {
@@ -94,6 +92,7 @@ n = entries only; unique files/bytes are reported as not computed (faster)`,
 }
 
 func askRoot(r *bufio.Reader, out io.Writer, c *colorizer, label, def string, drives []driveChoice) (string, error) {
+	fmt.Fprintln(out)
 	for {
 		value, err := readLine(r, out, c, label, def)
 		if err != nil {
@@ -129,6 +128,7 @@ func askRoot(r *bufio.Reader, out io.Writer, c *colorizer, label, def string, dr
 }
 
 func askBool(r *bufio.Reader, out io.Writer, c *colorizer, label, detail, help string, def bool) (bool, error) {
+	fmt.Fprintln(out)
 	if detail != "" {
 		fmt.Fprintln(out, c.bold(label+"?"))
 		fmt.Fprintln(out, detail)
@@ -162,10 +162,8 @@ func askBool(r *bufio.Reader, out io.Writer, c *colorizer, label, detail, help s
 	}
 }
 
-func askInt(r *bufio.Reader, out io.Writer, c *colorizer, label, detail string, def int) (int, error) {
-	if detail != "" {
-		fmt.Fprintln(out, c.dim(detail))
-	}
+func askInt(r *bufio.Reader, out io.Writer, c *colorizer, label string, def int) (int, error) {
+	fmt.Fprintln(out)
 	for {
 		value, err := readLine(r, out, c, label, strconv.Itoa(def))
 		if err != nil {
@@ -184,6 +182,7 @@ func askInt(r *bufio.Reader, out io.Writer, c *colorizer, label, detail string, 
 }
 
 func askFormat(r *bufio.Reader, out io.Writer, c *colorizer, jsonDefault bool) (bool, error) {
+	fmt.Fprintln(out)
 	hint := "1"
 	if jsonDefault {
 		hint = "2"

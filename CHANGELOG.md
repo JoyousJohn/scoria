@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 - 2026-11-01
+
+### Fixed
+
+- Interactive prompts are separated by blank lines.
+- Top-N and worker explanations are inline with their prompts instead of appearing
+  above the next question.
+
 ## 0.1.1 - 2026-11-01
 
 ### Added
