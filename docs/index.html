@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Scoria is a read-only Windows disk scanner. Find what's safe to remove, with reasons and confidence, without giving the tool a deletion path.">
+  <title>Scoria - Find what's safe to remove. Without removing it.</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header class="hero">
+    <p class="eyebrow">Windows · read-only disk scanner</p>
+    <h1>Find what's safe to remove.<br>Without removing it.</h1>
+    <p class="lede">
+      Scoria walks your drive, applies deterministic rules, and reports what looks
+      unused with reasons and confidence. It has no delete, move, or rename path.
+    </p>
+    <div class="actions">
+      <!-- Releases are published from https://github.com/JoyousJohn/scoria -->
+      <a class="button" href="https://github.com/JoyousJohn/scoria/releases/latest/download/scoria.exe">Download for Windows</a>
+      <a class="ghost" href="#guarantees">How it stays safe</a>
+    </div>
+    <p class="note">No installer. One portable .exe. Windows 10 or later.</p>
+  </header>
+
+  <section id="guarantees" class="grid">
+    <article>
+      <h2>It cannot delete</h2>
+      <p>
+        There is no delete, move, rename, or shell file-operation path in the tool.
+        Recommendations are text, not commands.
+      </p>
+    </article>
+    <article>
+      <h2>It sends nothing</h2>
+      <p>
+        No network access, no telemetry, no crash reports. Rules-only results work
+        fully offline.
+      </p>
+    </article>
+    <article>
+      <h2>Metadata only by default</h2>
+      <p>
+        The normal scan reads file metadata, never contents. Duplicate verification
+        is opt-in with <code>-dupes</code> and reads only same-size candidates.
+      </p>
+    </article>
+    <article>
+      <h2>It can drop privileges</h2>
+      <p>
+        <code>-low-integrity</code> lowers the process before scanning, so a bug
+        cannot write to most of the user profile. File report output is disabled in
+        that mode.
+      </p>
+    </article>
+  </section>
+
+  <section>
+    <h2>What it finds</h2>
+    <ul>
+      <li>Generated directories such as <code>node_modules</code>, <code>__pycache__</code>, <code>.venv</code>, and build outputs</li>
+      <li>Large and old files, with protected paths withheld</li>
+      <li>Temporary and crash-dump extensions</li>
+      <li>Size-only duplicate leads, and content-verified duplicate groups when you ask for them</li>
+      <li>What it skipped: reparse points, permission denials, cloud placeholders, and long paths</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What it will not do</h2>
+    <ul>
+      <li>It will not recommend anything under Windows, Program Files, restore points, <code>$Recycle.Bin</code>, or Recovery</li>
+      <li>It will not read files by default, and it will not hydrate cloud placeholders</li>
+      <li>It will not call the cloud, collect telemetry, or upload a report</li>
+      <li>It will not tell you a file is "safe to delete." It says what looks unused and why</li>
+    </ul>
+  </section>
+
+  <section class="quick">
+    <h2>Quick start</h2>
+    <pre><code>scoria -root C:\Users\me
+scoria -interactive
+scoria -root C:\Users\me -html scoria-report.html</code></pre>
+    <p class="note">
+      The source, issues, and release notes live on GitHub. The download link resolves
+      to the first published release.
+    </p>
+  </section>
+
+  <footer>
+    <p>MIT licensed. No telemetry. No network access. Nothing is deleted, moved, or renamed.</p>
+  </footer>
+</main>
+</body>
+</html>

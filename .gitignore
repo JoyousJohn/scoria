@@ -1,0 +1,8 @@
+*.exe
+/bin/
+/dist/
+*.pdb
+
+/testdata/generated/
+
+

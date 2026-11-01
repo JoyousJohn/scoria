@@ -1,0 +1,412 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/JoyousJohn/scoria/internal/digest"
+	"github.com/JoyousJohn/scoria/internal/dupes"
+	"github.com/JoyousJohn/scoria/internal/integrity"
+	"github.com/JoyousJohn/scoria/internal/report"
+	"github.com/JoyousJohn/scoria/internal/rules"
+	"github.com/JoyousJohn/scoria/internal/scan"
+)
+
+func main() {
+	root := flag.String("root", ".", "directory to scan")
+	workers := flag.Int("workers", 0, "directory workers (0 = 2x logical CPUs)")
+	top := flag.Int("top", 20, "number of entries to keep in each largest/oldest list (0 disables)")
+	jsonOutput := flag.Bool("json", false, "write the versioned digest JSON to stdout")
+	htmlPath := flag.String("html", "", "write a self-contained HTML report to this path (- for stdout)")
+	openReport := flag.Bool("open", true, "open the HTML report in the default browser")
+	countLinks := flag.Bool("links", true, "open each file read-only for accurate hard-link/unique totals (slower)")
+	verifyDupes := flag.Bool("dupes", false, "verify same-size duplicates >= 1 MiB by hashing candidates (reads candidate file contents)")
+	interactive := flag.Bool("interactive", false, "prompt for the options in the terminal before scanning")
+	lowIntegrity := flag.Bool("low-integrity", false, "lower the process to low integrity before scanning (disables file report output)")
+	colorMode := flag.String("color", "auto", "color output: auto, always, or never")
+	progressMode := flag.String("progress", "auto", "progress line: auto, always, or never")
+	sortMode := flag.String("sort", "priority", "recommendation order: priority or size")
+	flag.Parse()
+
+	if !validColorMode(*colorMode) {
+		fmt.Fprintf(os.Stderr, "scoria: invalid -color %q (want auto, always, or never)\n", *colorMode)
+		os.Exit(2)
+	}
+	if !validProgressMode(*progressMode) {
+		fmt.Fprintf(os.Stderr, "scoria: invalid -progress %q (want auto, always, or never)\n", *progressMode)
+		os.Exit(2)
+	}
+	if !validSortMode(*sortMode) {
+		fmt.Fprintf(os.Stderr, "scoria: invalid -sort %q (want priority or size)\n", *sortMode)
+		os.Exit(2)
+	}
+	if *htmlPath != "" && *jsonOutput {
+		fmt.Fprintln(os.Stderr, "scoria: -html and -json cannot be combined")
+		os.Exit(2)
+	}
+	if *lowIntegrity && *htmlPath != "" && *htmlPath != "-" {
+		fmt.Fprintln(os.Stderr, "scoria: -low-integrity cannot write an HTML report file; use -html - or omit -html")
+		os.Exit(2)
+	}
+	*sortMode = strings.ToLower(*sortMode)
+	stdoutColor := newColorizer(os.Stdout, *colorMode)
+	stderrColor := newColorizer(os.Stderr, *colorMode)
+
+	cfg := scan.Options{
+		Root:       *root,
+		Workers:    *workers,
+		TopN:       *top,
+		CountLinks: *countLinks,
+	}
+	jsonOut := *jsonOutput
+	var input *bufio.Reader
+	if *interactive {
+		input = bufio.NewReader(os.Stdin)
+	}
+	var err error
+	if *interactive {
+		cfg, jsonOut, err = promptOptions(input, os.Stderr, stderrColor, cfg, jsonOut)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+	}
+
+	if *lowIntegrity {
+		if err := integrity.LowerToLow(); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow("low integrity: scanning with a low-integrity token"))
+	}
+
+	progress := &progressLine{out: os.Stderr, enabled: progressEnabled(*progressMode, os.Stderr)}
+	if progress.enabled {
+		cfg.Progress = progress.update
+	}
+
+	result, err := scan.Walk(cfg)
+	progress.finish()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+		os.Exit(2)
+	}
+
+	var duplicateResult *dupes.Result
+	if *verifyDupes {
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow(
+			"duplicate check: reading contents of same-size candidates; the metadata-only guarantee does not apply to this phase",
+		))
+		collector := dupes.NewCollector(result.Aggregate.SizeCounts, dupes.Options{Root: result.Root})
+		dupProgress := &progressLine{out: os.Stderr, enabled: progress.enabled, label: "re-walked"}
+		dupCfg := scan.Options{
+			Root:       cfg.Root,
+			Workers:    cfg.Workers,
+			TopN:       0,
+			CountLinks: false,
+			FileSink:   collector.Sink,
+		}
+		if dupProgress.enabled {
+			dupCfg.Progress = dupProgress.update
+		}
+		_, err := scan.Walk(dupCfg)
+		dupProgress.finish()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.dim(fmt.Sprintf(
+			"duplicate check: hashing %s candidate files", commas(collector.CandidateCount()),
+		)))
+		duplicateResult = collector.Result()
+	}
+
+	elapsed := result.Elapsed
+	entriesPerSecond := 0.0
+	if elapsed > 0 {
+		entriesPerSecond = float64(result.Aggregate.Totals.Entries) / elapsed.Seconds()
+	}
+
+	meta := digest.Scan{
+		Workers:          result.Workers,
+		TopN:             cfg.TopN,
+		CountLinks:       cfg.CountLinks,
+		GoVersion:        runtime.Version(),
+		ElapsedMS:        elapsed.Milliseconds(),
+		EntriesPerSecond: entriesPerSecond,
+		Sort:             *sortMode,
+	}
+	ruleOpts := rules.DefaultOptions()
+	ruleOpts.DuplicateCheck = duplicateResult
+	recs := rules.Analyze(result.Root, result.Aggregate, ruleOpts)
+	sortRecommendations(recs, *sortMode)
+	doc := digest.New(result.Root, time.Now(), result.Aggregate, meta)
+	if duplicateResult != nil {
+		doc.DuplicateCheck = &digest.DuplicateCheck{
+			Candidates:       duplicateResult.Candidates,
+			Hashed:           duplicateResult.Hashed,
+			BytesRead:        duplicateResult.BytesRead,
+			ReadErrors:       duplicateResult.ReadErrors,
+			SkippedProtected: duplicateResult.SkippedProtected,
+			SkippedHardlinks: duplicateResult.SkippedHardlinks,
+		}
+	}
+	for _, r := range recs {
+		doc.Recommendations = append(doc.Recommendations, digest.Recommendation{
+			ID:         r.ID,
+			Rule:       r.Rule,
+			Title:      r.Title,
+			Detail:     r.Detail,
+			Confidence: string(r.Confidence),
+			Priority:   r.Priority,
+			Items:      r.Items,
+			Bytes:      r.Bytes,
+			Examples:   r.Examples,
+		})
+	}
+
+	if *htmlPath != "" {
+		var buf bytes.Buffer
+		if err := report.Render(&buf, doc); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		if *htmlPath == "-" {
+			if _, err := os.Stdout.Write(buf.Bytes()); err != nil {
+				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+				os.Exit(2)
+			}
+			return
+		}
+		if err := os.WriteFile(*htmlPath, buf.Bytes(), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		abs := *htmlPath
+		if p, err := filepath.Abs(*htmlPath); err == nil {
+			abs = p
+		}
+		fmt.Fprintf(os.Stderr, "report written: %s\n", abs)
+		if *openReport {
+			if err := openInBrowser(abs); err != nil {
+				fmt.Fprintf(os.Stderr, "%s could not open report: %v\n", stderrColor.yellow("warning:"), err)
+			}
+		}
+		return
+	}
+
+	if jsonOut {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(doc); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		return
+	}
+
+	printSummary(os.Stdout, stdoutColor, result, entriesPerSecond, cfg.TopN, cfg.CountLinks)
+	printRecommendations(os.Stdout, stdoutColor, recs, duplicateResult != nil)
+	printDuplicateStats(os.Stdout, stdoutColor, duplicateResult)
+	if *interactive && !jsonOut {
+		runSortMenu(input, os.Stdout, os.Stderr, stdoutColor, stderrColor, recs, duplicateResult != nil, *sortMode)
+	}
+}
+
+func printDuplicateStats(w io.Writer, c *colorizer, result *dupes.Result) {
+	if result == nil {
+		return
+	}
+	fmt.Fprintf(w, "\n%s\n", c.bold("duplicate check:"))
+	fmt.Fprintf(w, "  candidates: %s files, hashed: %s, read: %s, read errors: %s\n",
+		commas(result.Candidates), commas(result.Hashed), humanBytes(result.BytesRead), commas(result.ReadErrors))
+	fmt.Fprintf(w, "  skipped: %s protected paths, %s hard-link entries\n",
+		commas(result.SkippedProtected), commas(result.SkippedHardlinks))
+}
+
+func printRecommendations(w io.Writer, c *colorizer, recs []rules.Recommendation, contentsRead bool) {
+	header := "recommendations (rules only; metadata only - verify before acting):"
+	if contentsRead {
+		header = "recommendations (rules only; duplicate candidates were content-hashed - verify before acting):"
+	}
+	fmt.Fprintf(w, "\n%s\n", c.bold(header))
+	if len(recs) == 0 {
+		fmt.Fprintf(w, "  %s\n", c.dim("none"))
+		return
+	}
+	for i, r := range recs {
+		fmt.Fprintf(w, "  %2d. [%s] %s\n", i+1, r.Confidence, c.bold(r.Title))
+		fmt.Fprintf(w, "      %s %s, %s. %s\n", commas(r.Items), itemWord(r.Items), humanBytes(r.Bytes), r.Detail)
+		for _, example := range r.Examples {
+			fmt.Fprintf(w, "      e.g. %s\n", c.dim(example))
+		}
+	}
+}
+
+func printSummary(w io.Writer, c *colorizer, result *scan.Result, entriesPerSecond float64, top int, countLinks bool) {
+	agg := result.Aggregate
+	fmt.Fprintf(w, "%s\n", c.bold("scoria scan (read-only)"))
+	fmt.Fprintf(w, "root:       %s\n", result.Root)
+	fmt.Fprintf(w, "workers:    %d\ntop:        %d\nelapsed:    %s\nthroughput: %s entries/sec\n\n",
+		result.Workers, top, result.Elapsed.Round(time.Millisecond), commasFloat(entriesPerSecond))
+
+	fmt.Fprintf(w, "entries:        %s\n", commas(agg.Totals.Entries))
+	if countLinks {
+		fmt.Fprintf(w, "unique files:   %s\n", commas(agg.Totals.UniqueFiles))
+		fmt.Fprintf(w, "hardlink extra: %s\n", commas(agg.Totals.HardlinkExtra))
+	} else {
+		fmt.Fprintf(w, "unique files:   %s\n", c.yellow("not computed (-links=false)"))
+		fmt.Fprintf(w, "hardlink extra: %s\n", c.yellow("not computed (-links=false)"))
+	}
+	fmt.Fprintf(w, "files:          %s\n", commas(agg.Totals.Files))
+	fmt.Fprintf(w, "directories:    %s\n", commas(agg.Totals.Directories))
+	fmt.Fprintf(w, "empty files:    %s\n", commas(agg.Totals.EmptyFiles))
+	fmt.Fprintf(w, "logical bytes:  %s\n", humanBytes(agg.Totals.LogicalBytes))
+	fmt.Fprintf(w, "unique bytes:   %s\n\n", humanBytes(agg.Totals.UniqueBytes))
+
+	if len(agg.Largest) > 0 {
+		fmt.Fprintf(w, "%s\n", c.bold("largest files:"))
+		for i, f := range agg.Largest {
+			fmt.Fprintf(w, "  %2d. %10s  %s\n", i+1, humanBytes(f.Size), c.dim(f.Path))
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(agg.Stalest) > 0 {
+		fmt.Fprintf(w, "%s\n", c.bold("oldest files by last write:"))
+		for i, f := range agg.Stalest {
+			stamp := "unknown"
+			if !f.ModTime.IsZero() {
+				stamp = f.ModTime.Format("2006-01-02")
+			}
+			fmt.Fprintf(w, "  %2d. %10s  %s  %s\n", i+1, stamp, humanBytes(f.Size), c.dim(f.Path))
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(agg.Directories) > 0 {
+		fmt.Fprintf(w, "%s\n", c.bold("largest directories (direct contents):"))
+		for i, d := range agg.Directories {
+			fmt.Fprintf(w, "  %2d. %10s  %s files  %s\n", i+1, humanBytes(d.Bytes), commas(d.Files), c.dim(d.Path))
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(agg.Extensions) > 0 {
+		fmt.Fprintf(w, "%s\n", c.bold("extensions:"))
+		limit := len(agg.Extensions)
+		if limit > 12 {
+			limit = 12
+		}
+		for _, e := range agg.Extensions[:limit] {
+			ext := e.Ext
+			if ext == "" {
+				ext = "(none)"
+			}
+			fmt.Fprintf(w, "  %-14s %10s files  %s\n", ext, commas(e.Files), humanBytes(e.Bytes))
+		}
+		fmt.Fprintln(w)
+	}
+
+	fmt.Fprintf(w, "%s\n", c.bold("excluded by rules (not enumerated or aggregated):"))
+	if len(agg.Excluded) == 0 {
+		fmt.Fprintf(w, "  %s\n", c.dim("none matched"))
+	} else {
+		for _, e := range agg.Excluded {
+			suffix := ""
+			if e.Sensitive {
+				suffix = c.dim("  [sensitive preset, aggregate only]")
+			}
+			if e.Dirs > 0 {
+				fmt.Fprintf(w, "  %-32s %s dirs  %s%s\n", e.Rule, commas(e.Dirs), "(subtree not enumerated)", suffix)
+			}
+			if e.Files > 0 {
+				fmt.Fprintf(w, "  %-32s %s files  %s%s\n", e.Rule, commas(e.Files), humanBytes(e.Bytes), suffix)
+			}
+		}
+	}
+	fmt.Fprintln(w)
+
+	s := agg.Skipped
+	fmt.Fprintf(w, "%s\n", c.yellow("skipped by the tool:"))
+	fmt.Fprintf(w, "  reparse points:      %s (%s dirs, %s files)\n",
+		commas(s.ReparsePoints), commas(s.ReparsePointDirs), commas(s.ReparsePointFiles))
+	fmt.Fprintf(w, "  permission denied:   %s directories, %s files\n",
+		commas(s.PermissionDeniedDirs), commas(s.FileAccessDenied))
+	fmt.Fprintf(w, "  cloud placeholders:  %s (%s, not opened)\n",
+		commas(s.CloudPlaceholders), humanBytes(s.CloudPlaceholderBytes))
+	fmt.Fprintf(w, "  long path names:     %s\n", commas(s.LongPathNames))
+	fmt.Fprintf(w, "  other errors:        %s directories, %s file opens\n",
+		commas(s.OtherErrors), commas(s.FileOpenErrors))
+}
+
+func itemWord(n uint64) string {
+	if n == 1 {
+		return "item"
+	}
+	return "items"
+}
+
+func commas(n uint64) string {
+	return addCommas(strconv.FormatUint(n, 10))
+}
+
+func addCommas(s string) string {
+	if len(s) <= 3 {
+		return s
+	}
+	var b []byte
+	head := len(s) % 3
+	if head > 0 {
+		b = append(b, s[:head]...)
+	}
+	for i := head; i < len(s); i += 3 {
+		if len(b) > 0 {
+			b = append(b, ',')
+		}
+		b = append(b, s[i:i+3]...)
+	}
+	return string(b)
+}
+
+func commasFloat(v float64) string {
+	if v < 1000 {
+		return strconv.FormatFloat(v, 'f', 0, 64)
+	}
+	return commas(uint64(v))
+}
+
+func humanBytes(n int64) string {
+	if n < 0 {
+		return "-" + humanBytes(-n)
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	value := strconv.FormatFloat(float64(n)/float64(div), 'f', 2, 64)
+	if dot := strings.IndexByte(value, '.'); dot >= 0 {
+		value = addCommas(value[:dot]) + value[dot:]
+	}
+	return value + " " + string("KMGTPE"[exp]) + "iB"
+}
+
+func openInBrowser(path string) error {
+	return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+}
