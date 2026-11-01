@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Offline analyzer interface, redacted payload builder, and `-ai-preview`.
+
 ## 0.1.2 - 2026-11-01
 
 ### Fixed

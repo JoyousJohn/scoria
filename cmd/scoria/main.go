@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JoyousJohn/scoria/internal/analyzer"
 	"github.com/JoyousJohn/scoria/internal/digest"
 	"github.com/JoyousJohn/scoria/internal/dupes"
 	"github.com/JoyousJohn/scoria/internal/integrity"
@@ -30,6 +31,7 @@ func main() {
 	jsonOutput := flag.Bool("json", false, "write the versioned digest JSON to stdout")
 	htmlPath := flag.String("html", "", "write a self-contained HTML report to this path (- for stdout)")
 	openReport := flag.Bool("open", true, "open the HTML report in the default browser")
+	aiPreview := flag.Bool("ai-preview", false, "print the redacted analyzer payload and exit (no network)")
 	pause := flag.Bool("pause", false, "wait for Enter before exiting")
 	countLinks := flag.Bool("links", true, "open each file read-only for accurate hard-link/unique totals (slower)")
 	verifyDupes := flag.Bool("dupes", false, "verify same-size duplicates >= 1 MiB by hashing candidates (reads candidate file contents)")
@@ -60,6 +62,10 @@ func main() {
 	}
 	if *htmlPath != "" && *jsonOutput {
 		fmt.Fprintln(os.Stderr, "scoria: -html and -json cannot be combined")
+		os.Exit(2)
+	}
+	if *aiPreview && (*jsonOutput || *htmlPath != "") {
+		fmt.Fprintln(os.Stderr, "scoria: -ai-preview cannot be combined with -json or -html")
 		os.Exit(2)
 	}
 	if *lowIntegrity && *htmlPath != "" && *htmlPath != "-" {
@@ -181,6 +187,18 @@ func main() {
 			Bytes:      r.Bytes,
 			Examples:   r.Examples,
 		})
+	}
+
+	if *aiPreview {
+		fmt.Fprintln(os.Stderr, "analyzer payload preview: no network request")
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(analyzer.BuildPayload(doc)); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		pauseIfRequested(*pause)
+		return
 	}
 
 	if *htmlPath != "" {

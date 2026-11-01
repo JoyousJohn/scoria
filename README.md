@@ -66,6 +66,9 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 # machine-readable digest
 .\dist\scoria.exe -root C:\Users\me -json -progress=never -color=never > digest.json
 
+# inspect exactly what a future analyzer would receive; no network
+.\dist\scoria.exe -root C:\Users\me -ai-preview
+
 # self-contained HTML report, opened in the default browser
 .\dist\scoria.exe -root C:\Users\me -html scoria-report.html
 
@@ -91,6 +94,7 @@ non-interactively.
 | `-low-integrity` | lower the process to low mandatory integrity before scanning; file report output is disabled |
 | `-sort` | recommendation order: `priority` (default) or `size` |
 | `-json` | write the versioned digest to stdout |
+| `-ai-preview` | print the redacted, path-free analyzer payload and exit; no network |
 | `-html` | write a self-contained HTML report to this path; `-` writes to stdout |
 | `-open` | open the report in the default browser (default `true`) |
 | `-pause` | wait for Enter before exiting; automatic for no-argument console runs |
@@ -190,6 +194,10 @@ scoria -root C:\Users\me -json -progress=never -color=never > digest.json
 The JSON digest is versioned (`"version": 1`). Recommendations have stable per-scan
 IDs (`c1`, `c2`), a rule ID, priority, confidence, byte totals, and optional example
 paths. Reject any returned ID that is not in the candidate set.
+
+`-ai-preview` prints the separate, redacted analyzer payload and exits. It contains
+opaque candidate IDs, rule IDs, coarse size buckets, and aggregates, but no root,
+absolute paths, or recommendation examples. It makes no network request.
 
 Do not auto-delete based on this output. Require human confirmation. Do not use
 `-interactive` in automation. Remember that `-dupes` reads candidate file contents,

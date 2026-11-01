@@ -173,6 +173,9 @@ already produced. The payload contains opaque candidate IDs and coarse attribute
 paths. The producer redacts before the analyzer interface, the response is validated
 against the candidate set, and protected paths are rejected regardless of model output.
 
+The offline payload builder and rules-only analyzer live in `internal/analyzer`.
+`-ai-preview` prints the payload and exits without making a network request.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
