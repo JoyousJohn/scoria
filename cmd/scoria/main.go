@@ -30,6 +30,7 @@ func main() {
 	jsonOutput := flag.Bool("json", false, "write the versioned digest JSON to stdout")
 	htmlPath := flag.String("html", "", "write a self-contained HTML report to this path (- for stdout)")
 	openReport := flag.Bool("open", true, "open the HTML report in the default browser")
+	pause := flag.Bool("pause", false, "wait for Enter before exiting")
 	countLinks := flag.Bool("links", true, "open each file read-only for accurate hard-link/unique totals (slower)")
 	verifyDupes := flag.Bool("dupes", false, "verify same-size duplicates >= 1 MiB by hashing candidates (reads candidate file contents)")
 	interactive := flag.Bool("interactive", false, "prompt for the options in the terminal before scanning")
@@ -187,6 +188,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
 				os.Exit(2)
 			}
+			pauseIfRequested(*pause)
 			return
 		}
 		if err := os.WriteFile(*htmlPath, buf.Bytes(), 0o644); err != nil {
@@ -203,6 +205,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "%s could not open report: %v\n", stderrColor.yellow("warning:"), err)
 			}
 		}
+		pauseIfRequested(*pause)
 		return
 	}
 
@@ -213,6 +216,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
 			os.Exit(2)
 		}
+		pauseIfRequested(*pause)
 		return
 	}
 
@@ -222,6 +226,7 @@ func main() {
 	if *interactive && !jsonOut {
 		runSortMenu(input, os.Stdout, os.Stderr, stdoutColor, stderrColor, recs, duplicateResult != nil, *sortMode)
 	}
+	pauseIfRequested(*pause)
 }
 
 func printDuplicateStats(w io.Writer, c *colorizer, result *dupes.Result) {
@@ -409,4 +414,12 @@ func humanBytes(n int64) string {
 
 func openInBrowser(path string) error {
 	return exec.Command("rundll32", "url.dll,FileProtocolHandler", path).Start()
+}
+
+func pauseIfRequested(enabled bool) {
+	if !enabled {
+		return
+	}
+	fmt.Fprint(os.Stderr, "\nPress Enter to exit...")
+	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
 }
