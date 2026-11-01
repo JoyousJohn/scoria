@@ -39,6 +39,10 @@ func sample() *Digest {
 			Detail: "Looks generated.", Confidence: "medium", Priority: 80,
 			Items: 10, Bytes: 1024, Examples: []string{`app\node_modules`},
 		}},
+		Analysis: &Analysis{
+			Analyzer: "openrouter", Model: "openai/test",
+			Findings: []AnalysisFinding{{ID: "c1", Title: "Generated directory: node_modules", Rank: 1, Explanation: "Verify before acting."}},
+		},
 		DuplicateCheck: &DuplicateCheck{
 			Candidates: 3, Hashed: 2, BytesRead: 4096, ReadErrors: 1, SkippedProtected: 2, SkippedHardlinks: 1,
 		},

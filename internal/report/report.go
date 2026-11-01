@@ -219,6 +219,7 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border
   <h1>Storage review</h1>
   <p class="root"><code>{{.Root}}</code></p>
   <p class="lede">{{if .DuplicateCheck}}Scoria read metadata and verified duplicate candidates by hashing file contents. Nothing was changed or removed.{{else}}Scoria read metadata only. Nothing was changed or removed.{{end}}</p>
+  {{if .Analysis}}<p class="warn">A redacted, path-free candidate payload was sent to {{.Analysis.Analyzer}}{{if .Analysis.Model}} ({{.Analysis.Model}}){{end}} for ranking and explanation. No files were changed.</p>{{end}}
   <p class="warn">Every recommendation is a review candidate, not a deletion plan. Verify before acting.</p>
 </header>
 
@@ -274,6 +275,17 @@ footer { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--border
   <p class="empty">No recommendations. That is a valid result, not a failure.</p>
   {{end}}
 </section>
+
+{{if .Analysis}}
+<section>
+  <h2>Cloud analysis</h2>
+  <p class="muted">{{.Analysis.Analyzer}}{{if .Analysis.Model}} · {{.Analysis.Model}}{{end}}</p>
+  <table>
+    <thead><tr><th class="n">Rank</th><th>Candidate</th><th>Explanation</th></tr></thead>
+    <tbody>{{range .Analysis.Findings}}<tr><td class="n">{{.Rank}}</td><td><code>{{.ID}}</code> {{.Title}}</td><td>{{.Explanation}}</td></tr>{{end}}</tbody>
+  </table>
+</section>
+{{end}}
 
 {{if .DuplicateCheck}}
 <section>

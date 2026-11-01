@@ -35,6 +35,10 @@ func sampleDigest() *digest.Digest {
 			Detail: "Looks generated.", Confidence: "medium", Priority: 80,
 			Items: 10, Bytes: 1024, Examples: []string{`app\node_modules`},
 		}},
+		Analysis: &digest.Analysis{
+			Analyzer: "openrouter", Model: "openai/test",
+			Findings: []digest.AnalysisFinding{{ID: "c1", Title: "Generated directory: node_modules", Rank: 1, Explanation: "Verify before acting."}},
+		},
 		DuplicateCheck: &digest.DuplicateCheck{
 			Candidates: 3, Hashed: 2, BytesRead: 4096, ReadErrors: 1, SkippedProtected: 2, SkippedHardlinks: 1,
 		},
@@ -59,6 +63,7 @@ func TestRenderIncludesReportSections(t *testing.T) {
 		"Generated directory: node_modules",
 		`data-sort="size"`,
 		"Duplicate verification",
+		"Cloud analysis",
 		"Protected paths",
 		"Nothing was deleted, moved, or renamed.",
 	} {

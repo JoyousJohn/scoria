@@ -95,6 +95,19 @@ type Skipped struct {
 	OtherErrors           uint64 `json:"other_errors"`
 }
 
+type AnalysisFinding struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Rank        int    `json:"rank"`
+	Explanation string `json:"explanation"`
+}
+
+type Analysis struct {
+	Analyzer string            `json:"analyzer"`
+	Model    string            `json:"model,omitempty"`
+	Findings []AnalysisFinding `json:"findings"`
+}
+
 type Digest struct {
 	Version         int              `json:"version"`
 	GeneratedAt     time.Time        `json:"generated_at"`
@@ -110,6 +123,7 @@ type Digest struct {
 	Skipped         Skipped          `json:"skipped"`
 	Recommendations []Recommendation `json:"recommendations"`
 	DuplicateCheck  *DuplicateCheck  `json:"duplicate_check,omitempty"`
+	Analysis        *Analysis        `json:"analysis,omitempty"`
 }
 
 func New(root string, generatedAt time.Time, agg *aggregate.Aggregate, scan Scan) *Digest {
