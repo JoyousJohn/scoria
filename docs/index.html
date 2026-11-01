@@ -4,94 +4,847 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Scoria is a read-only Windows disk scanner. Find what's safe to remove, with reasons and confidence, without giving the tool a deletion path.">
-  <title>Scoria - Find what's safe to remove. Without removing it.</title>
+  <title>Scoria — Find what's safe to remove. Without removing it.</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<nav class="site-nav" aria-label="Primary">
+  <div class="nav-inner">
+    <a class="brand" href="#">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="#0B0F17"/>
+        <rect x="1" y="1" width="30" height="30" rx="7" stroke="#263244" stroke-width="1.5"/>
+        <path d="M16 6L25 11.2V20.8L16 26L7 20.8V11.2L16 6Z" stroke="#58A6FF" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M7 11.2L16 16.4L25 11.2" stroke="#38BDF8" stroke-width="1.75" stroke-linejoin="round"/>
+        <path d="M16 16.4V26" stroke="#38BDF8" stroke-width="1.75" stroke-linecap="round"/>
+        <circle cx="16" cy="11.2" r="1.75" fill="#34D399"/>
+      </svg>
+      <span>Scoria</span>
+      <span class="brand-tag">Win64 · Read-Only</span>
+    </a>
+
+    <div class="nav-links">
+      <a href="#guarantees">Guarantees</a>
+      <a href="#pipeline">Architecture</a>
+      <a href="#scope">Scope</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="#exclusions">Exclusions</a>
+      <a href="#flags">CLI Flags</a>
+      <a href="#evidence">Trust Proof</a>
+    </div>
+
+    <div class="nav-actions">
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme" title="Toggle dark/light theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+        </svg>
+      </button>
+      <a class="ghost" style="padding: 7px 12px; font-size: 13px;" href="https://github.com/JoyousJohn/scoria" target="_blank" rel="noopener">GitHub</a>
+      <a class="nav-cta" href="https://github.com/JoyousJohn/scoria/releases/latest/download/scoria.exe">Download .exe</a>
+    </div>
+  </div>
+</nav>
+
 <main>
   <header class="hero">
-    <p class="eyebrow">Windows · read-only disk scanner</p>
-    <h1>Find what's safe to remove.<br>Without removing it.</h1>
-    <p class="lede">
-      Scoria walks your drive, applies deterministic rules, and reports what looks
-      unused with reasons and confidence. It has no delete, move, or rename path.
-    </p>
-    <div class="actions">
-      <!-- Releases are published from https://github.com/JoyousJohn/scoria -->
-      <a class="button" href="https://github.com/JoyousJohn/scoria/releases/latest/download/scoria.exe">Download for Windows</a>
-      <a class="ghost" href="#guarantees">How it stays safe</a>
+    <div class="hero-copy">
+      <p class="eyebrow-pill">
+        <span class="eyebrow-dot" aria-hidden="true"></span>
+        Windows · read-only disk scanner
+      </p>
+      <h1>Find what's safe to remove.<br><span class="h1-sub">Without removing it.</span></h1>
+      <p class="lede">
+        Scoria walks your drive with <code>FindFirstFileExW</code>, applies deterministic rules,
+        and reports what looks unused with reasons and confidence. It has no delete, move, or
+        rename path anywhere in the binary.
+      </p>
+      <div class="actions">
+        <!-- Releases are published from https://github.com/JoyousJohn/scoria -->
+        <a class="button" href="https://github.com/JoyousJohn/scoria/releases/latest/download/scoria.exe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Download for Windows
+        </a>
+        <a class="ghost" href="#guarantees">How it stays safe</a>
+        <a class="ghost" href="#evidence">Verify import table</a>
+      </div>
+      <p class="note">No installer. One portable <code>.exe</code>. Windows 10 or later.</p>
+
+      <div class="hero-specs">
+        <span class="spec-item">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+          Zero write syscalls in scan path
+        </span>
+        <span class="spec-item">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+          CGO_ENABLED=0 static Go build
+        </span>
+        <span class="spec-item">
+          <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+          Offline &amp; zero telemetry
+        </span>
+      </div>
     </div>
-    <p class="note">No installer. One portable .exe. Windows 10 or later.</p>
+
+    <aside class="terminal-card" aria-label="Scoria output preview">
+      <div class="terminal-topbar">
+        <div class="terminal-dots" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="terminal-tabs" role="tablist" aria-label="Output views">
+          <button type="button" class="term-tab active" role="tab" aria-selected="true" data-pane="pane-scan">Console Scan</button>
+          <button type="button" class="term-tab" role="tab" aria-selected="false" data-pane="pane-ai">AI Payload Preview</button>
+          <button type="button" class="term-tab" role="tab" aria-selected="false" data-pane="pane-imports">PE Imports</button>
+        </div>
+      </div>
+      <div class="terminal-body">
+<pre class="term-pane active" id="pane-scan"><span class="t-prompt">PS&gt;</span> <span class="t-cmd">scoria.exe -root C:\Users\me -dupes</span>
+<span class="t-dim">scoria scan (read-only)</span>
+root:           C:\Users\me
+workers:        16  |  links: true  |  dupes: content-verified
+
+<span class="t-head">skipped by the tool:</span>
+  reparse points:      42 (39 dirs, 3 files)
+  cloud placeholders:  118 (not opened, not hydrated)
+  excluded by rules:   4,812 files  (1.94 GiB)
+
+<span class="t-head">recommendations (rules only; metadata only - verify before acting):</span>
+  <span class="t-ok">[c1] high</span>    verified-duplicates   3 groups      4.12 GiB
+       reason: identical SHA-256 content across same-size files &gt;= 1 MiB
+  <span class="t-ok">[c2] medium</span>  generated-dir         node_modules  8.45 GiB  (14 dirs)
+       reason: dependency tree; reproducible from package lockfiles
+  <span class="t-ok">[c3] medium</span>  generated-dir         target        3.80 GiB  (4 dirs)
+       reason: build artifact output directory
+  <span class="t-warn">[c4] low</span>     old-files             last write &gt; 365d  2.19 GiB
+       reason: stale large archives outside protected OS paths</pre>
+
+<pre class="term-pane" id="pane-ai"><span class="t-prompt">PS&gt;</span> <span class="t-cmd">scoria.exe -root C:\Users\me -ai-preview</span>
+<span class="t-dim">// No network call. Literal redacted JSON payload (0 absolute paths):</span>
+{
+  <span class="t-head">"version"</span>: 1,
+  <span class="t-head">"candidates"</span>: [
+    {
+      <span class="t-head">"id"</span>: <span class="t-ok">"c1"</span>,
+      <span class="t-head">"rule_id"</span>: <span class="t-val">"generated-dir:node_modules"</span>,
+      <span class="t-head">"confidence"</span>: <span class="t-val">"medium"</span>,
+      <span class="t-head">"priority"</span>: 20,
+      <span class="t-head">"item_count"</span>: 14,
+      <span class="t-head">"size_bucket"</span>: <span class="t-val">"1GiB-10GiB"</span>
+    },
+    {
+      <span class="t-head">"id"</span>: <span class="t-ok">"c2"</span>,
+      <span class="t-head">"rule_id"</span>: <span class="t-val">"temp-extension:.dmp"</span>,
+      <span class="t-head">"confidence"</span>: <span class="t-val">"medium"</span>,
+      <span class="t-head">"priority"</span>: 30,
+      <span class="t-head">"item_count"</span>: 6,
+      <span class="t-head">"size_bucket"</span>: <span class="t-val">"100MiB-1GiB"</span>
+    }
+  ]
+}</pre>
+
+<pre class="term-pane" id="pane-imports"><span class="t-prompt">PS&gt;</span> <span class="t-cmd">go run ./tools/imports dist/scoria.exe</span>
+<span class="t-dim"># Verified by CI on every commit (cmd/ and internal/ + PE table):</span>
+kernel32.dll
+  CloseHandle
+  GetConsoleMode
+  GetProcAddress
+  LoadLibraryExW
+  WriteFile          <span class="t-dim"># stdout / explicit -html report output only</span>
+
+<span class="t-ok">✓ 0 occurrences of DeleteFile / DeleteFileW</span>
+<span class="t-ok">✓ 0 occurrences of MoveFile / MoveFileExW</span>
+<span class="t-ok">✓ 0 occurrences of SHFileOperation / IFileOperation</span>
+<span class="t-ok">✓ 0 occurrences of NtSetInformationFile / RegDeleteKey</span>
+<span class="t-ok">✓ 0 occurrences of GENERIC_WRITE in scanner paths</span></pre>
+      </div>
+    </aside>
   </header>
 
-  <section id="guarantees" class="grid">
-    <article>
-      <h2>It cannot delete</h2>
+  <section id="guarantees">
+    <div class="section-header">
+      <p class="section-eyebrow">Structural Safety</p>
+      <h2>Four verifiable guarantees</h2>
       <p>
-        There is no delete, move, rename, or shell file-operation path in the tool.
-        Recommendations are text, not commands.
+        Disk utilities ask for blind trust while holding deletion APIs. Scoria removes the
+        capability entirely so a bad rule, a model hallucination, or a bug cannot destroy data.
       </p>
-    </article>
-    <article>
-      <h2>It sends nothing by default</h2>
-      <p>
-        Network access is off by default. The optional <code>-ai</code> and <code>-ai-discover</code> analyzers send redacted, path-free payloads to OpenRouter only when you ask. No telemetry, no crash reports.
-      </p>
-    </article>
-    <article>
-      <h2>Metadata only by default</h2>
-      <p>
-        The normal scan reads file metadata, never contents. Duplicate verification
-        is opt-in with <code>-dupes</code> and reads only same-size candidates.
-      </p>
-    </article>
-    <article>
-      <h2>It can drop privileges</h2>
-      <p>
-        <code>-low-integrity</code> lowers the process before scanning, so a bug
-        cannot write to most of the user profile. File report output is disabled in
-        that mode.
-      </p>
-    </article>
+    </div>
+
+    <div class="grid">
+      <article class="guarantee-card">
+        <div>
+          <div class="card-top">
+            <span class="card-icon emerald" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+            </span>
+            <span class="card-index">INVARIANT 01</span>
+          </div>
+          <h2>It cannot delete</h2>
+          <p>
+            There is no delete, move, rename, registry-write, or shell file-operation path in
+            the tool. Recommendations are text, not commands. The only file write is the optional
+            HTML report path you explicitly pass to <code>-html</code>.
+          </p>
+        </div>
+        <div class="card-meta">
+          <span>Enforced by source &amp; PE tripwires</span>
+          <span class="status-badge ok">No Write APIs</span>
+        </div>
+      </article>
+
+      <article class="guarantee-card">
+        <div>
+          <div class="card-top">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+            </span>
+            <span class="card-index">INVARIANT 02</span>
+          </div>
+          <h2>It sends nothing by default</h2>
+          <p>
+            Network access is off by default. The optional <code>-ai</code> and
+            <code>-ai-discover</code> analyzers send redacted, path-free payloads to OpenRouter
+            only when you ask. Inspect the exact JSON offline first with <code>-ai-preview</code>
+            or <code>-ai-discover-preview</code>. No telemetry, no crash reports.
+          </p>
+        </div>
+        <div class="card-meta">
+          <span>Opaque IDs (<code>c1</code>, <code>c2</code>) only</span>
+          <span class="status-badge info">Offline Default</span>
+        </div>
+      </article>
+
+      <article class="guarantee-card">
+        <div>
+          <div class="card-top">
+            <span class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+            </span>
+            <span class="card-index">INVARIANT 03</span>
+          </div>
+          <h2>Metadata only by default</h2>
+          <p>
+            The normal scan reads directory entries and file attributes
+            (<code>FILE_READ_ATTRIBUTES</code>), never file contents. Cloud placeholders are
+            counted without opening or hydrating them. Content duplicate verification is opt-in
+            with <code>-dupes</code> and reads only same-size candidates &ge; 1 MiB.
+          </p>
+        </div>
+        <div class="card-meta">
+          <span>8 KiB prefix + SHA-256 on opt-in</span>
+          <span class="status-badge info">Zero Content Reads</span>
+        </div>
+      </article>
+
+      <article class="guarantee-card">
+        <div>
+          <div class="card-top">
+            <span class="card-icon amber" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            </span>
+            <span class="card-index">INVARIANT 04</span>
+          </div>
+          <h2>It can drop privileges</h2>
+          <p>
+            <code>-low-integrity</code> lowers the process token to Windows Low Mandatory
+            Integrity (<code>S-1-16-4096</code>) before scanning, so the OS kernel blocks writes
+            to normal user profile directories. File report output is disabled in that mode
+            (<code>-html -</code> to stdout still works).
+          </p>
+        </div>
+        <div class="card-meta">
+          <span>OS-enforced write-up block</span>
+          <span class="status-badge warn">S-1-16-4096</span>
+        </div>
+      </article>
+    </div>
   </section>
 
-  <section>
-    <h2>What it finds</h2>
-    <ul>
-      <li>Generated directories such as <code>node_modules</code>, <code>__pycache__</code>, <code>.venv</code>, and build outputs</li>
-      <li>Large and old files, with protected paths withheld</li>
-      <li>Temporary and crash-dump extensions</li>
-      <li>Size-only duplicate leads, and content-verified duplicate groups when you ask for them</li>
-      <li>What it skipped: reparse points, permission denials, cloud placeholders, and long paths</li>
-    </ul>
+  <section id="pipeline">
+    <div class="section-header">
+      <p class="section-eyebrow">Architecture</p>
+      <h2>Bounded memory from Win32 enumeration to report</h2>
+      <p>
+        Scoria never stores a per-file index of your drive in memory or a database. It streams
+        directory entries through bounded heaps and deterministic rules.
+      </p>
+    </div>
+
+    <div class="pipeline-flow">
+      <div class="pipe-step">
+        <span class="pipe-num">01 · ENUMERATE</span>
+        <h3>Win32 Large Fetch</h3>
+        <p>
+          Walks <code>\\?\</code> paths via <code>FindFirstFileExW</code> with
+          <code>FindExInfoBasic</code> and a bounded worker pool. Skips reparse points to prevent
+          junction loops.
+        </p>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">02 · FILTER</span>
+        <h3>Pre-Scan Exclusions</h3>
+        <p>
+          Applies built-in sensitive rules and user exclusions during enumeration before paths
+          enter totals, heaps, logs, or output.
+        </p>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">03 · AGGREGATE</span>
+        <h3>Bounded Rollups</h3>
+        <p>
+          Maintains top-N largest/oldest heaps, extension rollups, hard-link deduplication by
+          file ID, and <code>size &rarr; count</code> maps.
+        </p>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">04 · VALIDATE</span>
+        <h3>Rules &amp; Guardrails</h3>
+        <p>
+          Generates deterministic candidates with confidence levels while withholding protected
+          Windows and system paths.
+        </p>
+      </div>
+      <div class="pipe-step">
+        <span class="pipe-num">05 · OUTPUT</span>
+        <h3>Console, JSON, HTML</h3>
+        <p>
+          Renders terminal summaries, a versioned JSON digest (<code>version: 1</code>), or a
+          self-contained interactive HTML report.
+        </p>
+      </div>
+    </div>
   </section>
 
-  <section>
-    <h2>What it will not do</h2>
-    <ul>
-      <li>It will not recommend anything under Windows, Program Files, restore points, <code>$Recycle.Bin</code>, or Recovery</li>
-      <li>It will not read files by default, and it will not hydrate cloud placeholders</li>
-      <li>It will not call the cloud, collect telemetry, or upload a report</li>
-      <li>It will not tell you a file is "safe to delete." It says what looks unused and why</li>
-    </ul>
+  <section id="scope">
+    <div class="section-header">
+      <p class="section-eyebrow">Signal vs. Restraint</p>
+      <h2>Explicit scope and hard boundaries</h2>
+      <p>
+        Every recommendation carries a rule ID, a priority, a confidence rating
+        (<code>high</code>, <code>medium</code>, or <code>low</code>), and a plain-English
+        reason. Confidence describes the evidence—never permission to delete automatically.
+      </p>
+    </div>
+
+    <div class="comparison-grid">
+      <div class="comp-panel finds">
+        <div class="comp-header">
+          <h2>What it finds</h2>
+          <span class="status-badge ok">Review Candidates</span>
+        </div>
+        <ul class="feature-list">
+          <li>
+            <span class="list-marker yes">+</span>
+            <div>
+              <strong>Generated directories</strong> such as <code>node_modules</code>,
+              <code>__pycache__</code>, <code>.venv</code>, <code>build</code>,
+              <code>dist</code>, <code>target</code>, and <code>obj</code>
+            </div>
+          </li>
+          <li>
+            <span class="list-marker yes">+</span>
+            <div>
+              <strong>Large and old files</strong> retained in bounded top-N heaps, with all
+              protected OS and application paths withheld
+            </div>
+          </li>
+          <li>
+            <span class="list-marker yes">+</span>
+            <div>
+              <strong>Temporary and crash-dump extensions</strong> including <code>.tmp</code>,
+              <code>.part</code>, <code>.crdownload</code>, and <code>.dmp</code>
+            </div>
+          </li>
+          <li>
+            <span class="list-marker yes">+</span>
+            <div>
+              <strong>Duplicate leads &amp; verified groups</strong>: size-only leads by default,
+              plus SHA-256 content-verified duplicate groups when you pass <code>-dupes</code>
+            </div>
+          </li>
+          <li>
+            <span class="list-marker yes">+</span>
+            <div>
+              <strong>Transparent skip accounting</strong>: reparse points, permission denials,
+              cloud placeholders, and long paths are counted separately instead of silently hidden
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="comp-panel never">
+        <div class="comp-header">
+          <h2>What it will not do</h2>
+          <span class="status-badge" style="border: 1px solid var(--rose-border); background: var(--rose-soft); color: var(--rose);">Hard Non-Goals</span>
+        </div>
+        <ul class="feature-list">
+          <li>
+            <span class="list-marker no">&times;</span>
+            <div>
+              <strong>Never recommends protected paths</strong> under <code>Windows</code>,
+              <code>Program Files</code>, restore points, <code>$Recycle.Bin</code>,
+              <code>Recovery</code>, <code>Windows.old</code>, or system paging/hibernation files
+            </div>
+          </li>
+          <li>
+            <span class="list-marker no">&times;</span>
+            <div>
+              <strong>Never reads file contents by default</strong>, and never opens or hydrates
+              OneDrive / cloud placeholder files
+            </div>
+          </li>
+          <li>
+            <span class="list-marker no">&times;</span>
+            <div>
+              <strong>Never phones home</strong>: no background network calls, no telemetry, no
+              crash dumps, and no silent report uploads
+            </div>
+          </li>
+          <li>
+            <span class="list-marker no">&times;</span>
+            <div>
+              <strong>Never lets an LLM invent paths</strong>: optional <code>-ai</code> ranking
+              validates every returned ID against local rule candidates and rejects unknown IDs
+            </div>
+          </li>
+          <li>
+            <span class="list-marker no">&times;</span>
+            <div>
+              <strong>Never tells you a file is "safe to delete"</strong>: it reports what looks
+              unused and why, leaving every action to you
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
   </section>
 
-  <section class="quick">
-    <h2>Quick start</h2>
-    <pre><code>scoria -root C:\Users\me
-scoria -interactive
-scoria -root C:\Users\me -html scoria-report.html</code></pre>
-    <p class="note">
-      The source, issues, and release notes live on GitHub. The download link resolves
-      to the first published release.
-    </p>
+  <section id="quickstart">
+    <div class="section-header">
+      <p class="section-eyebrow">Workflows</p>
+      <h2>Quick start &amp; common recipes</h2>
+      <p>
+        Run <code>scoria.exe</code> with no arguments (or double-click it) to launch guided
+        interactive mode, or pass flags in PowerShell for repeatable workflows.
+      </p>
+    </div>
+
+    <div class="quick-grid">
+      <div class="cmd-card">
+        <div>
+          <div class="cmd-card-header">
+            <h3>1. Standard &amp; interactive scans</h3>
+            <span class="status-badge ok">Metadata Only</span>
+          </div>
+          <p>Scan a user profile or launch interactive setup with post-scan priority/size sorting.</p>
+        </div>
+        <div class="code-block-wrap">
+          <pre><code>scoria -root C:\Users\me
+scoria -interactive</code></pre>
+          <button type="button" class="copy-btn" data-copy="scoria -root C:\Users\me&#10;scoria -interactive">Copy</button>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div>
+          <div class="cmd-card-header">
+            <h3>2. Self-contained HTML report</h3>
+            <span class="status-badge info">Browser View</span>
+          </div>
+          <p>Generate an offline, zero-dependency HTML report with interactive priority/size sorting.</p>
+        </div>
+        <div class="code-block-wrap">
+          <pre><code>scoria -root C:\Users\me -html scoria-report.html
+scoria -root C:\Users\me -html - -open=false &gt; report.html</code></pre>
+          <button type="button" class="copy-btn" data-copy="scoria -root C:\Users\me -html scoria-report.html">Copy</button>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div>
+          <div class="cmd-card-header">
+            <h3>3. Content-verified duplicates</h3>
+            <span class="status-badge warn">Opt-In Content Read</span>
+          </div>
+          <p>Hashes 8 KiB prefixes then full contents only for same-size candidates &ge; 1 MiB.</p>
+        </div>
+        <div class="code-block-wrap">
+          <pre><code>scoria -root C:\Users\me -dupes -sort=size</code></pre>
+          <button type="button" class="copy-btn" data-copy="scoria -root C:\Users\me -dupes -sort=size">Copy</button>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div>
+          <div class="cmd-card-header">
+            <h3>4. Inspect AI payloads offline</h3>
+            <span class="status-badge info">Zero Network</span>
+          </div>
+          <p>Verify the exact redacted, path-free JSON before ever configuring an API key.</p>
+        </div>
+        <div class="code-block-wrap">
+          <pre><code>scoria -root C:\Users\me -ai-preview
+scoria -root C:\Users\me -ai-discover-preview</code></pre>
+          <button type="button" class="copy-btn" data-copy="scoria -root C:\Users\me -ai-preview">Copy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="exclusions">
+    <div class="section-header">
+      <p class="section-eyebrow">Privacy by Default</p>
+      <h2>Enumeration-time exclusions &amp; sensitive presets</h2>
+      <p>
+        Exclusions are applied while walking directories—excluded subtrees are never descended
+        into and never enter byte totals, heaps, JSON digests, or reports.
+      </p>
+    </div>
+
+    <div class="split-panel">
+      <div>
+        <h3>Always-on sensitive preset</h3>
+        <p style="color: var(--text-secondary); font-size: 14.5px;">
+          Scoria automatically withholds credential stores, keys, password-manager vaults,
+          browser profiles, and cryptocurrency wallets from enumeration and recommendations.
+        </p>
+        <div class="preset-tags" aria-label="Built-in sensitive exclusions">
+          <span class="preset-tag">.ssh</span>
+          <span class="preset-tag">*.kdbx</span>
+          <span class="preset-tag">*.pem</span>
+          <span class="preset-tag">*.key</span>
+          <span class="preset-tag">wallet.dat</span>
+          <span class="preset-tag">Browser Profiles</span>
+          <span class="preset-tag">Password Managers</span>
+          <span class="preset-tag">Crypto Wallets</span>
+        </div>
+
+        <h3 style="margin-top: 22px;">Default config lookup</h3>
+        <p style="color: var(--text-secondary); font-size: 14.5px; margin-bottom: 0;">
+          When <code>-exclude-file</code> is omitted, Scoria automatically loads
+          <code>%APPDATA%\Scoria\exclusions.txt</code> if it exists (and prints the rule count
+          to stderr). It never creates the file or directory. Pass <code>-no-config</code> for
+          a clean run with only built-in rules and explicit flags.
+        </p>
+      </div>
+
+      <div>
+        <h3>Example <code>%APPDATA%\Scoria\exclusions.txt</code></h3>
+        <p style="color: var(--text-secondary); font-size: 13.5px;">
+          One rule per line: <code>dir</code>, <code>glob</code>, <code>ext</code>, or
+          <code>name</code>. Relative directories resolve against the config file's folder.
+        </p>
+        <div class="code-block-wrap">
+          <pre><code># %APPDATA%\Scoria\exclusions.txt
+dir  D:\Projects\archive
+dir  "C:\Users\me\AppData\Local\Old App"
+glob *.bak
+ext  .log
+ext  .tmp
+name Thumbs.db</code></pre>
+          <button type="button" class="copy-btn" data-copy="# %APPDATA%\Scoria\exclusions.txt&#10;dir  D:\Projects\archive&#10;dir  &quot;C:\Users\me\AppData\Local\Old App&quot;&#10;glob *.bak&#10;ext  .log&#10;ext  .tmp&#10;name Thumbs.db">Copy</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="flags">
+    <div class="section-header">
+      <p class="section-eyebrow">CLI Reference</p>
+      <h2>Complete command-line flags</h2>
+      <p>
+        All behavior is controlled by explicit flags. Filter the table below to find options for
+        scanning, exclusions, output formats, or optional analysis.
+      </p>
+    </div>
+
+    <div class="table-controls">
+      <input type="search" id="flag-search" class="flag-search" placeholder="Filter flags (e.g. dupes, exclude, ai, html)..." aria-label="Filter CLI flags">
+      <span class="note" id="flag-count">Showing all 22 flags</span>
+    </div>
+
+    <div class="table-wrap">
+      <table id="flags-table">
+        <thead>
+          <tr>
+            <th>Flag</th>
+            <th>Default</th>
+            <th>Behavior</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>-root</code></td>
+            <td><code>.</code></td>
+            <td>Directory root to scan</td>
+          </tr>
+          <tr>
+            <td><code>-workers</code></td>
+            <td><code>0</code> (2&times; CPUs)</td>
+            <td>Bounded directory worker pool size</td>
+          </tr>
+          <tr>
+            <td><code>-top</code></td>
+            <td><code>20</code></td>
+            <td>Entries kept in each largest/oldest heap (<code>0</code> disables lists)</td>
+          </tr>
+          <tr>
+            <td><code>-links</code></td>
+            <td><code>true</code></td>
+            <td>Open each file read-only (<code>FILE_READ_ATTRIBUTES</code>) for hard-link and unique-file totals</td>
+          </tr>
+          <tr>
+            <td><code>-dupes</code></td>
+            <td><code>false</code></td>
+            <td>Verify same-size duplicates &ge; 1 MiB by hashing candidates; <strong>reads candidate file contents</strong></td>
+          </tr>
+          <tr>
+            <td><code>-exclude</code></td>
+            <td>none</td>
+            <td>Exclude a directory subtree at enumeration time (repeatable)</td>
+          </tr>
+          <tr>
+            <td><code>-exclude-glob</code></td>
+            <td>none</td>
+            <td>Exclude a filename/path glob pattern (repeatable)</td>
+          </tr>
+          <tr>
+            <td><code>-exclude-ext</code></td>
+            <td>none</td>
+            <td>Exclude a file extension such as <code>.log</code> (repeatable)</td>
+          </tr>
+          <tr>
+            <td><code>-exclude-name</code></td>
+            <td>none</td>
+            <td>Exclude an exact filename such as <code>Thumbs.db</code> (repeatable)</td>
+          </tr>
+          <tr>
+            <td><code>-exclude-file</code></td>
+            <td>auto lookup</td>
+            <td>Read exclusion rules from a text file (replaces default <code>%APPDATA%\Scoria\exclusions.txt</code>)</td>
+          </tr>
+          <tr>
+            <td><code>-no-config</code></td>
+            <td><code>false</code></td>
+            <td>Do not load the default <code>%APPDATA%\Scoria\exclusions.txt</code> file</td>
+          </tr>
+          <tr>
+            <td><code>-interactive</code></td>
+            <td>auto on 0 args</td>
+            <td>Prompt for scan options, then offer a post-scan priority/size sort toggle</td>
+          </tr>
+          <tr>
+            <td><code>-low-integrity</code></td>
+            <td><code>false</code></td>
+            <td>Lower process token to <code>S-1-16-4096</code> before scanning; file report output is disabled</td>
+          </tr>
+          <tr>
+            <td><code>-sort</code></td>
+            <td><code>priority</code></td>
+            <td>Recommendation sort order: <code>priority</code> or <code>size</code></td>
+          </tr>
+          <tr>
+            <td><code>-json</code></td>
+            <td><code>false</code></td>
+            <td>Write the versioned JSON digest (<code>"version": 1</code>) to stdout</td>
+          </tr>
+          <tr>
+            <td><code>-html</code></td>
+            <td>none</td>
+            <td>Write a self-contained HTML report to this path (<code>-</code> writes to stdout)</td>
+          </tr>
+          <tr>
+            <td><code>-open</code></td>
+            <td><code>true</code></td>
+            <td>Open the generated HTML report in the default browser</td>
+          </tr>
+          <tr>
+            <td><code>-ai-preview</code></td>
+            <td><code>false</code></td>
+            <td>Print the redacted, path-free analyzer payload and exit; makes no network call</td>
+          </tr>
+          <tr>
+            <td><code>-ai</code></td>
+            <td><code>false</code></td>
+            <td>Run the optional OpenRouter analyzer on redacted candidates; requires API key and <code>-model</code></td>
+          </tr>
+          <tr>
+            <td><code>-ai-discover-preview</code></td>
+            <td><code>false</code></td>
+            <td>Print the redacted directory-basename discovery payload and exit; makes no network call</td>
+          </tr>
+          <tr>
+            <td><code>-ai-discover</code></td>
+            <td><code>false</code></td>
+            <td>Propose directory-name patterns via OpenRouter; suggestions are never applied automatically</td>
+          </tr>
+          <tr>
+            <td><code>-model</code></td>
+            <td>none</td>
+            <td>OpenRouter model ID (for example <code>openai/gpt-4o-mini</code>) used with <code>-ai</code> or <code>-ai-discover</code></td>
+          </tr>
+          <tr>
+            <td><code>-pause</code></td>
+            <td>auto</td>
+            <td>Wait for Enter before exiting; enabled automatically for no-argument console runs</td>
+          </tr>
+          <tr>
+            <td><code>-color</code></td>
+            <td><code>auto</code></td>
+            <td>Control ANSI color output: <code>auto</code>, <code>always</code>, or <code>never</code></td>
+          </tr>
+          <tr>
+            <td><code>-progress</code></td>
+            <td><code>auto</code></td>
+            <td>Control the live progress line: <code>auto</code>, <code>always</code>, or <code>never</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="evidence">
+    <div class="section-header">
+      <p class="section-eyebrow">Don't Trust, Verify</p>
+      <h2>Auditable read-only evidence</h2>
+      <p>
+        Scoria's read-only guarantee is enforced in CI on every push and release—both at the Go
+        source level and by inspecting the compiled Windows PE binary.
+      </p>
+    </div>
+
+    <div class="evidence-grid">
+      <div class="evidence-card">
+        <h3>1. Source write-API tripwire</h3>
+        <p style="color: var(--text-secondary); font-size: 14.5px;">
+          Every CI run scans <code>cmd/</code> and <code>internal/</code> and fails the build if
+          any destructive Win32, NT, shell, or registry symbol appears anywhere in the scanner:
+        </p>
+        <div class="symbol-grid">
+          <div class="symbol-pill"><span>DeleteFile</span><span>Blocked</span></div>
+          <div class="symbol-pill"><span>MoveFile</span><span>Blocked</span></div>
+          <div class="symbol-pill"><span>SHFileOperation</span><span>Blocked</span></div>
+          <div class="symbol-pill"><span>NtSetInformationFile</span><span>Blocked</span></div>
+          <div class="symbol-pill"><span>RegDeleteKey</span><span>Blocked</span></div>
+          <div class="symbol-pill"><span>GENERIC_WRITE</span><span>Blocked</span></div>
+        </div>
+        <p class="note" style="margin: 0;">
+          Scanner file handles use <code>FILE_READ_ATTRIBUTES</code> only.
+        </p>
+      </div>
+
+      <div class="evidence-card">
+        <h3>2. Reproducible build &amp; PE import inspection</h3>
+        <p style="color: var(--text-secondary); font-size: 14.5px;">
+          Build from source with zero C dependencies or inspect the static import table of any
+          release binary using the included <code>tools/imports</code> verifier or
+          <code>dumpbin /imports</code>:
+        </p>
+        <div class="code-block-wrap">
+          <pre><code>$env:CGO_ENABLED = "0"
+go build -trimpath -ldflags="-s -w" -o dist/scoria.exe ./cmd/scoria
+go run ./tools/imports dist/scoria.exe</code></pre>
+          <button type="button" class="copy-btn" data-copy="$env:CGO_ENABLED = &quot;0&quot;&#10;go build -trimpath -ldflags=&quot;-s -w&quot; -o dist/scoria.exe ./cmd/scoria&#10;go run ./tools/imports dist/scoria.exe">Copy</button>
+        </div>
+        <p class="note" style="margin-top: 12px; margin-bottom: 0;">
+          Releases publish <code>scoria.exe</code> alongside <code>SHA256SUMS</code> and
+          <code>IMPORTS.txt</code>.
+        </p>
+      </div>
+    </div>
   </section>
 
   <footer>
-    <p>MIT licensed. No telemetry. Network access is off by default. Nothing is deleted, moved, or renamed.</p>
+    <div class="footer-inner">
+      <p style="margin: 0;">
+        MIT licensed. No telemetry. Network access is off by default. Nothing is deleted, moved, or renamed.
+      </p>
+      <div class="footer-links">
+        <a href="https://github.com/JoyousJohn/scoria">Repository</a>
+        <a href="https://github.com/JoyousJohn/scoria/releases">Releases</a>
+        <a href="https://github.com/JoyousJohn/scoria/blob/main/DESIGN.md">DESIGN.md</a>
+        <a href="https://github.com/JoyousJohn/scoria/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/JoyousJohn/scoria/blob/main/CHANGELOG.md">Changelog</a>
+      </div>
+    </div>
   </footer>
 </main>
+
+<script>
+  (function () {
+    // Theme toggle (dark / light)
+    var root = document.documentElement;
+    var toggleBtn = document.getElementById("theme-toggle");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", function () {
+        var current = root.getAttribute("data-theme");
+        var isLight = current === "light" || (!current && window.matchMedia("(prefers-color-scheme: light)").matches);
+        root.setAttribute("data-theme", isLight ? "dark" : "light");
+      });
+    }
+
+    // Terminal preview tabs
+    var tabs = document.querySelectorAll(".term-tab");
+    var panes = document.querySelectorAll(".term-pane");
+    tabs.forEach(function (tab) {
+      tab.addEventListener("click", function () {
+        var target = tab.getAttribute("data-pane");
+        tabs.forEach(function (t) {
+          var active = t === tab;
+          t.classList.toggle("active", active);
+          t.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        panes.forEach(function (p) {
+          p.classList.toggle("active", p.id === target);
+        });
+      });
+    });
+
+    // Copy buttons
+    var copyBtns = document.querySelectorAll(".copy-btn");
+    copyBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var text = btn.getAttribute("data-copy") || "";
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            btn.textContent = "Copied";
+            btn.classList.add("copied");
+            setTimeout(function () {
+              btn.textContent = "Copy";
+              btn.classList.remove("copied");
+            }, 1600);
+          });
+        }
+      });
+    });
+
+    // Live CLI flag table filter
+    var searchInput = document.getElementById("flag-search");
+    var table = document.getElementById("flags-table");
+    var countEl = document.getElementById("flag-count");
+    if (searchInput && table && countEl) {
+      var rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
+      var total = rows.length;
+      countEl.textContent = "Showing all " + total + " flags";
+      searchInput.addEventListener("input", function () {
+        var q = searchInput.value.trim().toLowerCase();
+        var shown = 0;
+        rows.forEach(function (row) {
+          var match = !q || row.textContent.toLowerCase().indexOf(q) !== -1;
+          row.style.display = match ? "" : "none";
+          if (match) shown++;
+        });
+        countEl.textContent = q
+          ? "Showing " + shown + " of " + total + " flags"
+          : "Showing all " + total + " flags";
+      });
+    }
+  })();
+</script>
 </body>
 </html>
-
-
