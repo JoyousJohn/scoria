@@ -5,6 +5,8 @@
 ### Added
 
 - Offline analyzer interface, redacted payload builder, and `-ai-preview`.
+- Optional OpenRouter cloud analysis with `-ai` and `-model`; sends only the redacted
+  path-free payload.
 
 ## 0.1.2 - 2026-11-01
 

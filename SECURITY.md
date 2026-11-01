@@ -28,7 +28,7 @@ In scope:
 - bypass of the exclusion or protected-path policy
 - unintended file-content reads outside `-dupes`
 - report or digest content that leaks files the user excluded
-- network access, telemetry, or crash uploads
+- unexpected network access outside `-ai`, telemetry, or crash uploads
 - low-integrity mode failing open
 
 Out of scope:

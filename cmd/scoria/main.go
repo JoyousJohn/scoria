@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/JoyousJohn/scoria/internal/analyzer"
+	"github.com/JoyousJohn/scoria/internal/analyzer/openrouter"
 	"github.com/JoyousJohn/scoria/internal/digest"
 	"github.com/JoyousJohn/scoria/internal/dupes"
 	"github.com/JoyousJohn/scoria/internal/integrity"
@@ -32,6 +34,8 @@ func main() {
 	htmlPath := flag.String("html", "", "write a self-contained HTML report to this path (- for stdout)")
 	openReport := flag.Bool("open", true, "open the HTML report in the default browser")
 	aiPreview := flag.Bool("ai-preview", false, "print the redacted analyzer payload and exit (no network)")
+	useAI := flag.Bool("ai", false, "run the optional OpenRouter analyzer")
+	model := flag.String("model", "", "OpenRouter model ID required with -ai")
 	pause := flag.Bool("pause", false, "wait for Enter before exiting")
 	countLinks := flag.Bool("links", true, "open each file read-only for accurate hard-link/unique totals (slower)")
 	verifyDupes := flag.Bool("dupes", false, "verify same-size duplicates >= 1 MiB by hashing candidates (reads candidate file contents)")
@@ -67,6 +71,24 @@ func main() {
 	if *aiPreview && (*jsonOutput || *htmlPath != "") {
 		fmt.Fprintln(os.Stderr, "scoria: -ai-preview cannot be combined with -json or -html")
 		os.Exit(2)
+	}
+	apiKey := os.Getenv("SCORIA_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENROUTER_API_KEY")
+	}
+	if *useAI {
+		if *aiPreview {
+			fmt.Fprintln(os.Stderr, "scoria: -ai and -ai-preview cannot be combined")
+			os.Exit(2)
+		}
+		if strings.TrimSpace(*model) == "" {
+			fmt.Fprintln(os.Stderr, "scoria: -model is required with -ai")
+			os.Exit(2)
+		}
+		if apiKey == "" {
+			fmt.Fprintln(os.Stderr, "scoria: set SCORIA_API_KEY or OPENROUTER_API_KEY for -ai")
+			os.Exit(2)
+		}
 	}
 	if *lowIntegrity && *htmlPath != "" && *htmlPath != "-" {
 		fmt.Fprintln(os.Stderr, "scoria: -low-integrity cannot write an HTML report file; use -html - or omit -html")
@@ -189,6 +211,30 @@ func main() {
 		})
 	}
 
+	if *useAI {
+		payload := analyzer.BuildPayload(doc)
+		if len(payload.Candidates) == 0 {
+			fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow("cloud analysis: no candidates; request skipped"))
+		} else {
+			client, err := openrouter.New(openrouter.Config{
+				APIKey: apiKey,
+				Model:  *model,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+				os.Exit(2)
+			}
+			fmt.Fprintf(os.Stderr, "cloud analysis: sending %s candidates to OpenRouter model %s\n",
+				commas(uint64(len(payload.Candidates))), *model)
+			result, err := client.Analyze(context.Background(), payload)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "%s cloud analysis failed: %v\n", stderrColor.yellow("warning:"), err)
+			} else {
+				doc.Analysis = digestAnalysis(result, doc.Recommendations)
+			}
+		}
+	}
+
 	if *aiPreview {
 		fmt.Fprintln(os.Stderr, "analyzer payload preview: no network request")
 		enc := json.NewEncoder(os.Stdout)
@@ -246,11 +292,32 @@ func main() {
 
 	printSummary(os.Stdout, stdoutColor, result, entriesPerSecond, cfg.TopN, cfg.CountLinks)
 	printRecommendations(os.Stdout, stdoutColor, recs, duplicateResult != nil)
+	printAnalysis(os.Stdout, stdoutColor, doc.Analysis)
 	printDuplicateStats(os.Stdout, stdoutColor, duplicateResult)
 	if *interactive && !jsonOut {
 		runSortMenu(input, os.Stdout, os.Stderr, stdoutColor, stderrColor, recs, duplicateResult != nil, *sortMode)
 	}
 	pauseIfRequested(*pause)
+}
+
+func printAnalysis(w io.Writer, c *colorizer, analysis *digest.Analysis) {
+	if analysis == nil {
+		return
+	}
+	header := "cloud analysis (" + analysis.Analyzer
+	if analysis.Model != "" {
+		header += ", " + analysis.Model
+	}
+	header += "):"
+	fmt.Fprintf(w, "\n%s\n", c.bold(header))
+	for _, finding := range analysis.Findings {
+		title := finding.Title
+		if title == "" {
+			title = finding.ID
+		}
+		fmt.Fprintf(w, "  %s [%d] %s\n", c.dim(finding.ID), finding.Rank, c.bold(title))
+		fmt.Fprintf(w, "      %s\n", finding.Explanation)
+	}
 }
 
 func printDuplicateStats(w io.Writer, c *colorizer, result *dupes.Result) {
@@ -262,6 +329,27 @@ func printDuplicateStats(w io.Writer, c *colorizer, result *dupes.Result) {
 		commas(result.Candidates), commas(result.Hashed), humanBytes(result.BytesRead), commas(result.ReadErrors))
 	fmt.Fprintf(w, "  skipped: %s protected paths, %s hard-link entries\n",
 		commas(result.SkippedProtected), commas(result.SkippedHardlinks))
+}
+
+func digestAnalysis(result analyzer.Result, recs []digest.Recommendation) *digest.Analysis {
+	titles := make(map[string]string, len(recs))
+	for _, recommendation := range recs {
+		titles[recommendation.ID] = recommendation.Title
+	}
+	analysis := &digest.Analysis{
+		Analyzer: result.Analyzer,
+		Model:    result.Model,
+		Findings: make([]digest.AnalysisFinding, 0, len(result.Findings)),
+	}
+	for _, finding := range result.Findings {
+		analysis.Findings = append(analysis.Findings, digest.AnalysisFinding{
+			ID:          finding.ID,
+			Title:       titles[finding.ID],
+			Rank:        finding.Rank,
+			Explanation: finding.Explanation,
+		})
+	}
+	return analysis
 }
 
 func printRecommendations(w io.Writer, c *colorizer, recs []rules.Recommendation, contentsRead bool) {

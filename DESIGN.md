@@ -10,7 +10,8 @@ The product premise is structural: **it cannot delete, move, or rename anything.
 
 - No `DeleteFile`, `MoveFile`, `SHFileOperation`, `NtSetInformationFile`, `RegDeleteKey`,
   or `GENERIC_WRITE` in the scanner.
-- No network access, telemetry, or crash reporting.
+- No network access, telemetry, or crash reporting by default. `-ai` is the only
+  network path, and it is explicit.
 - Metadata-only by default. `-dupes` is the only content-reading path, and it is opt-in.
 - Exclusions are filtered at enumeration time, before paths enter totals, logs, the
   digest, or the report.

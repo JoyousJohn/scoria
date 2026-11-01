@@ -2,6 +2,9 @@ package analyzer
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/JoyousJohn/scoria/internal/digest"
 )
@@ -58,6 +61,7 @@ type Finding struct {
 
 type Result struct {
 	Analyzer string    `json:"analyzer"`
+	Model    string    `json:"model,omitempty"`
 	Findings []Finding `json:"findings"`
 }
 
@@ -77,6 +81,47 @@ func (RulesOnly) Analyze(_ context.Context, payload Payload) (Result, error) {
 		})
 	}
 	return Result{Analyzer: "rules-only", Findings: findings}, nil
+}
+
+func Validate(payload Payload, result Result) (Result, error) {
+	allowed := make(map[string]struct{}, len(payload.Candidates))
+	for _, candidate := range payload.Candidates {
+		allowed[candidate.ID] = struct{}{}
+	}
+	seenIDs := make(map[string]struct{}, len(result.Findings))
+	seenRanks := make(map[int]struct{}, len(result.Findings))
+	findings := make([]Finding, 0, len(result.Findings))
+	for _, finding := range result.Findings {
+		id := strings.TrimSpace(finding.ID)
+		if _, ok := allowed[id]; !ok {
+			return Result{}, fmt.Errorf("analyzer returned unknown candidate ID %q", id)
+		}
+		if _, ok := seenIDs[id]; ok {
+			return Result{}, fmt.Errorf("analyzer returned duplicate candidate ID %q", id)
+		}
+		if finding.Rank < 1 || finding.Rank > len(payload.Candidates) {
+			return Result{}, fmt.Errorf("analyzer returned invalid rank %d", finding.Rank)
+		}
+		if _, ok := seenRanks[finding.Rank]; ok {
+			return Result{}, fmt.Errorf("analyzer returned duplicate rank %d", finding.Rank)
+		}
+		explanation := strings.TrimSpace(finding.Explanation)
+		if explanation == "" {
+			return Result{}, fmt.Errorf("analyzer returned an empty explanation for %q", id)
+		}
+		if len(explanation) > 2000 {
+			return Result{}, fmt.Errorf("analyzer explanation for %q is too long", id)
+		}
+		seenIDs[id] = struct{}{}
+		seenRanks[finding.Rank] = struct{}{}
+		findings = append(findings, Finding{ID: id, Rank: finding.Rank, Explanation: explanation})
+	}
+	if len(seenIDs) != len(allowed) {
+		return Result{}, fmt.Errorf("analyzer returned %d of %d candidates", len(seenIDs), len(allowed))
+	}
+	sort.Slice(findings, func(i, j int) bool { return findings[i].Rank < findings[j].Rank })
+	result.Findings = findings
+	return result, nil
 }
 
 func BuildPayload(doc *digest.Digest) Payload {

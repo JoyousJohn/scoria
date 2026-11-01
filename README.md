@@ -10,8 +10,9 @@ metadata, applies deterministic rules, and reports review candidates with reason
 It cannot delete, move, or rename anything. It writes only the HTML report you
 explicitly request.
 
-Status: early v1, rules-only. No installer, no GUI framework, no network client, no
-telemetry. Console, JSON, and self-contained HTML output. Windows 10 or later.
+Status: early v1, rules-first. No installer, no GUI framework, no telemetry. Network
+access is off by default; `-ai` is an explicit OpenRouter opt-in. Console, JSON, and
+self-contained HTML output. Windows 10 or later.
 
 ## What it does
 
@@ -69,6 +70,10 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 # inspect exactly what a future analyzer would receive; no network
 .\dist\scoria.exe -root C:\Users\me -ai-preview
 
+# optional cloud ranking/explanation through OpenRouter
+$env:SCORIA_API_KEY = "sk-or-v1-..."
+.\dist\scoria.exe -root C:\Users\me -ai -model openai/gpt-4o-mini
+
 # self-contained HTML report, opened in the default browser
 .\dist\scoria.exe -root C:\Users\me -html scoria-report.html
 
@@ -95,6 +100,8 @@ non-interactively.
 | `-sort` | recommendation order: `priority` (default) or `size` |
 | `-json` | write the versioned digest to stdout |
 | `-ai-preview` | print the redacted, path-free analyzer payload and exit; no network |
+| `-ai` | run the optional OpenRouter analyzer; requires a key and `-model` |
+| `-model` | OpenRouter model ID, for example `openai/gpt-4o-mini` |
 | `-html` | write a self-contained HTML report to this path; `-` writes to stdout |
 | `-open` | open the report in the default browser (default `true`) |
 | `-pause` | wait for Enter before exiting; automatic for no-argument console runs |
@@ -133,7 +140,12 @@ Free space and size-on-disk are not guessed. Totals are logical sizes, which is 
   process cannot write to most of the user profile, even if the scanner has a bug.
   File report output is disabled in this mode; `-html -` still works through the
   inherited stdout handle.
-- No network access, no telemetry, no crash reports.
+- No network access unless `-ai` is explicitly used; the default scan and
+  `-ai-preview` are offline.
+- `-ai` sends a redacted, path-free candidate payload to OpenRouter and the upstream
+  model provider. The key is read from `SCORIA_API_KEY` or `OPENROUTER_API_KEY` and is
+  never logged.
+- No telemetry, no crash reports.
 - No delete, move, rename, registry-write, or shell file-operation APIs.
 - Excluded and sensitive paths are filtered before aggregation. The sensitive preset
   covers `.ssh`, common password-manager and browser-profile directories, crypto
@@ -198,6 +210,10 @@ paths. Reject any returned ID that is not in the candidate set.
 `-ai-preview` prints the separate, redacted analyzer payload and exits. It contains
 opaque candidate IDs, rule IDs, coarse size buckets, and aggregates, but no root,
 absolute paths, or recommendation examples. It makes no network request.
+
+`-ai` is the only network path. It requires `SCORIA_API_KEY` or `OPENROUTER_API_KEY`
+and `-model`, sends the preview payload to OpenRouter, and accepts only validated
+candidate IDs.
 
 Do not auto-delete based on this output. Require human confirmation. Do not use
 `-interactive` in automation. Remember that `-dupes` reads candidate file contents,
