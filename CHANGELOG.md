@@ -13,6 +13,9 @@
   `-no-config`.
 - Optional directory-pattern discovery with `-ai-discover`; sends aggregate basenames
   only, and suggestions are never applied automatically.
+- Guided setup now covers output format (HTML report, console, or JSON), duplicate
+  verification, AI review, exclusions, and advanced tuning, with a confirmation
+  summary before scanning.
 
 ## 0.1.2 - 2026-11-01
 

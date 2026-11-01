@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -71,6 +72,52 @@ func main() {
 		fmt.Fprintf(os.Stderr, "scoria: invalid -progress %q (want auto, always, or never)\n", *progressMode)
 		os.Exit(2)
 	}
+	stdoutColor := newColorizer(os.Stdout, *colorMode)
+	stderrColor := newColorizer(os.Stderr, *colorMode)
+	apiKey := os.Getenv("SCORIA_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENROUTER_API_KEY")
+	}
+
+	var input *bufio.Reader
+	if *interactive {
+		input = bufio.NewReader(os.Stdin)
+		wizard, err := promptOptions(input, os.Stderr, stderrColor, wizardOptions{
+			Root:         *root,
+			Workers:      *workers,
+			TopN:         *top,
+			CountLinks:   *countLinks,
+			JSON:         *jsonOutput,
+			HTML:         *htmlPath,
+			Open:         *openReport,
+			Dupes:        *verifyDupes,
+			AI:           *useAI,
+			Model:        *model,
+			LowIntegrity: *lowIntegrity,
+			Exclusions:   exclusionArgs,
+			APIKey:       apiKey,
+		})
+		if err != nil {
+			if errors.Is(err, errWizardQuit) {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			os.Exit(2)
+		}
+		*root = wizard.Root
+		*workers = wizard.Workers
+		*top = wizard.TopN
+		*countLinks = wizard.CountLinks
+		*jsonOutput = wizard.JSON
+		*htmlPath = wizard.HTML
+		*openReport = wizard.Open
+		*verifyDupes = wizard.Dupes
+		*useAI = wizard.AI
+		*model = wizard.Model
+		*lowIntegrity = wizard.LowIntegrity
+		exclusionArgs = wizard.Exclusions
+	}
+
 	if !validSortMode(*sortMode) {
 		fmt.Fprintf(os.Stderr, "scoria: invalid -sort %q (want priority or size)\n", *sortMode)
 		os.Exit(2)
@@ -91,10 +138,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "scoria: -ai and -ai-discover cannot be combined")
 		os.Exit(2)
 	}
-	apiKey := os.Getenv("SCORIA_API_KEY")
-	if apiKey == "" {
-		apiKey = os.Getenv("OPENROUTER_API_KEY")
-	}
 	if *useAI || *discover {
 		if strings.TrimSpace(*model) == "" {
 			fmt.Fprintln(os.Stderr, "scoria: -model is required with -ai or -ai-discover")
@@ -110,8 +153,6 @@ func main() {
 		os.Exit(2)
 	}
 	*sortMode = strings.ToLower(*sortMode)
-	stdoutColor := newColorizer(os.Stdout, *colorMode)
-	stderrColor := newColorizer(os.Stderr, *colorMode)
 
 	exclusionRules, customRules, configSource, configRules, buildErr := buildExclusionRules(exclusionArgs)
 	if buildErr != nil {
@@ -129,18 +170,6 @@ func main() {
 		Exclusions: exclusionRules,
 	}
 	jsonOut := *jsonOutput
-	var input *bufio.Reader
-	if *interactive {
-		input = bufio.NewReader(os.Stdin)
-	}
-	var err error
-	if *interactive {
-		cfg, jsonOut, err = promptOptions(input, os.Stderr, stderrColor, cfg, jsonOut)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
-			os.Exit(2)
-		}
-	}
 
 	if *lowIntegrity {
 		if err := integrity.LowerToLow(); err != nil {

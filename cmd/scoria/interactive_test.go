@@ -3,58 +3,173 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/JoyousJohn/scoria/internal/scan"
 )
 
 func TestPromptOptionsDefaults(t *testing.T) {
 	var out bytes.Buffer
-	defaults := scan.Options{Root: ".", Workers: 0, TopN: 20, CountLinks: true}
-	got, jsonOut, err := promptOptions(bufio.NewReader(strings.NewReader("\n\n\n\n\n")), &out, nil, defaults, false)
+	defaults := wizardOptions{Root: ".", Workers: 0, TopN: 20, CountLinks: true, Open: true}
+	got, err := promptOptions(bufio.NewReader(strings.NewReader("\n\n\n\n\n\n\n")), &out, nil, defaults)
 	if err != nil {
 		t.Fatalf("promptOptions: %v", err)
 	}
-	if !sameOptions(got, defaults) {
-		t.Fatalf("options = %#v", got)
+	if got.Root != "." || got.Workers != 0 || got.TopN != 20 || !got.CountLinks {
+		t.Fatalf("scan options = %#v", got)
 	}
-	if jsonOut {
-		t.Fatal("json should default to false")
+	if got.JSON || got.Dupes || got.AI || got.LowIntegrity {
+		t.Fatalf("optional modes should be off: %#v", got)
+	}
+	if !filepath.IsAbs(got.HTML) || !strings.HasSuffix(got.HTML, ".html") {
+		t.Fatalf("report path = %q", got.HTML)
+	}
+	if !got.Open {
+		t.Fatal("report should open by default")
 	}
 }
 
 func TestPromptOptionsOverrides(t *testing.T) {
-	var out bytes.Buffer
-	defaults := scan.Options{Root: ".", Workers: 0, TopN: 20, CountLinks: true}
-	got, jsonOut, err := promptOptions(bufio.NewReader(strings.NewReader("C:\\Windows\nn\n50\n8\n2\n")), &out, nil, defaults, false)
-	if err != nil {
-		t.Fatalf("promptOptions: %v", err)
-	}
-	want := scan.Options{Root: `C:\Windows`, Workers: 8, TopN: 50, CountLinks: false}
-	if !sameOptions(got, want) {
-		t.Fatalf("options = %#v, want %#v", got, want)
-	}
-	if !jsonOut {
-		t.Fatal("json should be true")
-	}
-}
-
-func TestPromptOptionsRetriesMissingRoot(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer
-	defaults := scan.Options{Root: ".", Workers: 0, TopN: 20, CountLinks: true}
-	input := "Z:\\definitely-not-here\n" + dir + "\n\n\n\n\n"
-	got, _, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults, false)
+	defaults := wizardOptions{Root: ".", Workers: 0, TopN: 20, CountLinks: true, Open: true}
+	input := dir + "\n2\n1,2\n2\n\n"
+	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
 	if err != nil {
 		t.Fatalf("promptOptions: %v", err)
 	}
 	if got.Root != filepath.Clean(dir) {
 		t.Fatalf("root = %q, want %q", got.Root, filepath.Clean(dir))
 	}
-	if !strings.Contains(out.String(), "Cannot use") {
-		t.Fatalf("output did not contain root error: %q", out.String())
+	if got.CountLinks {
+		t.Fatal("fast mode should disable hard-link counting")
+	}
+	if !got.Dupes {
+		t.Fatal("duplicate verification should be on")
+	}
+	if got.AI {
+		t.Fatal("AI review should be skipped without an API key")
+	}
+	if got.JSON || got.HTML != "" {
+		t.Fatalf("console output selected, got JSON=%v HTML=%q", got.JSON, got.HTML)
+	}
+	if !strings.Contains(out.String(), "AI review needs SCORIA_API_KEY") {
+		t.Fatalf("missing key message absent: %q", out.String())
+	}
+}
+
+func TestPromptOptionsRetriesInvalidAnswers(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	defaults := wizardOptions{Root: ".", Workers: 0, TopN: 20, CountLinks: true, Open: true}
+	input := "Z:\\definitely-not-here\n" + dir + "\n9\n1\nx\n\n7\n3\n\n"
+	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
+	if err != nil {
+		t.Fatalf("promptOptions: %v", err)
+	}
+	if got.Root != filepath.Clean(dir) {
+		t.Fatalf("root = %q, want %q", got.Root, filepath.Clean(dir))
+	}
+	if !got.JSON {
+		t.Fatal("JSON output should be selected")
+	}
+	text := out.String()
+	for _, want := range []string{
+		"Cannot use",
+		"Please enter 1 or 2.",
+		"Please enter 1, 2, 1,2, or none.",
+		"Please enter 1, 2, or 3.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("output missing %q: %q", want, text)
+		}
+	}
+}
+
+func TestPromptOptionsQuit(t *testing.T) {
+	var out bytes.Buffer
+	defaults := wizardOptions{Root: ".", Workers: 0, TopN: 20, CountLinks: true, Open: true}
+	_, err := promptOptions(bufio.NewReader(strings.NewReader("\n\n\n\n\n\nq\n")), &out, nil, defaults)
+	if !errors.Is(err, errWizardQuit) {
+		t.Fatalf("err = %v, want errWizardQuit", err)
+	}
+}
+
+func TestPromptOptionsAIRequiresModel(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	defaults := wizardOptions{Root: dir, Workers: 0, TopN: 20, CountLinks: true, Open: true, APIKey: "test-key"}
+	input := "\n1\n2\nopenai/gpt-4o-mini\n2\n\n"
+	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
+	if err != nil {
+		t.Fatalf("promptOptions: %v", err)
+	}
+	if !got.AI || got.Model != "openai/gpt-4o-mini" {
+		t.Fatalf("AI = %v, model = %q", got.AI, got.Model)
+	}
+	if !strings.Contains(out.String(), "redacted payload") {
+		t.Fatalf("redaction notice absent: %q", out.String())
+	}
+}
+
+func TestPromptOptionsBlankModelSkipsAI(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+	defaults := wizardOptions{Root: dir, Workers: 0, TopN: 20, CountLinks: true, Open: true, APIKey: "test-key"}
+	input := "\n1\n2\n\n2\n\n"
+	got, err := promptOptions(bufio.NewReader(strings.NewReader(input)), &out, nil, defaults)
+	if err != nil {
+		t.Fatalf("promptOptions: %v", err)
+	}
+	if got.AI {
+		t.Fatal("blank model should skip AI review")
+	}
+}
+
+func TestPromptAdvancedUpdatesOptions(t *testing.T) {
+	var out bytes.Buffer
+	opts := wizardOptions{
+		Root:       ".",
+		Workers:    0,
+		TopN:       20,
+		CountLinks: true,
+		Open:       true,
+		HTML:       `C:\reports\scoria.html`,
+	}
+	input := "1\n50\n2\n8\n3\nC:\\temp\n5\n.log\n9\ny\nb\n"
+	if err := promptAdvanced(bufio.NewReader(strings.NewReader(input)), &out, nil, &opts); err != nil {
+		t.Fatalf("promptAdvanced: %v", err)
+	}
+	if opts.TopN != 50 || opts.Workers != 8 {
+		t.Fatalf("top = %d, workers = %d", opts.TopN, opts.Workers)
+	}
+	if len(opts.Exclusions.dirs) != 1 || opts.Exclusions.dirs[0] != `C:\temp` {
+		t.Fatalf("dirs = %#v", opts.Exclusions.dirs)
+	}
+	if len(opts.Exclusions.exts) != 1 || opts.Exclusions.exts[0] != ".log" {
+		t.Fatalf("exts = %#v", opts.Exclusions.exts)
+	}
+	if !opts.LowIntegrity {
+		t.Fatal("low integrity should be on")
+	}
+	if opts.HTML != "" || opts.Open {
+		t.Fatalf("HTML = %q, open = %v; low integrity must fall back to console", opts.HTML, opts.Open)
+	}
+	if !strings.Contains(out.String(), "switching output to console") {
+		t.Fatalf("fallback notice absent: %q", out.String())
+	}
+}
+
+func TestPromptAdvancedTogglesDefaultConfig(t *testing.T) {
+	var out bytes.Buffer
+	opts := wizardOptions{TopN: 20}
+	input := "8\nb\n"
+	if err := promptAdvanced(bufio.NewReader(strings.NewReader(input)), &out, nil, &opts); err != nil {
+		t.Fatalf("promptAdvanced: %v", err)
+	}
+	if !opts.Exclusions.noConfig {
+		t.Fatal("default exclusion config should be off")
 	}
 }
 
@@ -83,43 +198,22 @@ func TestAskRootAcceptsDriveNumberAndQuotes(t *testing.T) {
 	}
 }
 
-func TestPromptOptionsShowsHardlinkHelpThenAcceptsAnswer(t *testing.T) {
+func TestAskReportPathRejectsMissingDirectoryAndAcceptsStdout(t *testing.T) {
 	var out bytes.Buffer
-	defaults := scan.Options{Root: ".", Workers: 0, TopN: 20, CountLinks: true}
-	got, _, err := promptOptions(bufio.NewReader(strings.NewReader("\n?\ny\n\n\n\n")), &out, nil, defaults, false)
+	missing := filepath.Join(t.TempDir(), "missing", "report.html")
+	got, err := askReportPath(
+		bufio.NewReader(strings.NewReader(missing+"\n-\n")),
+		&out,
+		nil,
+		filepath.Join(t.TempDir(), "default.html"),
+	)
 	if err != nil {
-		t.Fatalf("promptOptions: %v", err)
+		t.Fatalf("askReportPath: %v", err)
 	}
-	if !got.CountLinks {
-		t.Fatal("count links should be true")
+	if got != "-" {
+		t.Fatalf("path = %q, want -", got)
 	}
-	if !strings.Contains(out.String(), "A hard link is a second name") {
-		t.Fatalf("output did not contain help: %q", out.String())
+	if !strings.Contains(out.String(), "directory does not exist") {
+		t.Fatalf("missing directory message absent: %q", out.String())
 	}
-	if !strings.Contains(out.String(), "[Y/n/?]") {
-		t.Fatalf("output did not advertise help: %q", out.String())
-	}
-}
-
-func TestPromptOptionsRetriesInvalidAnswers(t *testing.T) {
-	var out bytes.Buffer
-	defaults := scan.Options{Root: ".", Workers: 0, TopN: 20, CountLinks: true}
-	got, jsonOut, err := promptOptions(bufio.NewReader(strings.NewReader("\nmaybe\ny\n-1\n10\n8\n9\nconsole\n")), &out, nil, defaults, false)
-	if err != nil {
-		t.Fatalf("promptOptions: %v", err)
-	}
-	want := scan.Options{Root: ".", Workers: 8, TopN: 10, CountLinks: true}
-	if !sameOptions(got, want) {
-		t.Fatalf("options = %#v, want %#v", got, want)
-	}
-	if jsonOut {
-		t.Fatal("json should be false")
-	}
-	if !strings.Contains(out.String(), "Please enter a non-negative integer.") {
-		t.Fatalf("output did not contain retry message: %q", out.String())
-	}
-}
-
-func sameOptions(a, b scan.Options) bool {
-	return a.Root == b.Root && a.Workers == b.Workers && a.TopN == b.TopN && a.CountLinks == b.CountLinks
 }

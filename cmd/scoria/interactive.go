@@ -9,86 +9,329 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/JoyousJohn/scoria/internal/scan"
 )
 
-func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, defaults scan.Options, jsonDefault bool) (scan.Options, bool, error) {
-	fmt.Fprintln(out, c.bold("Scoria interactive setup (press Enter to accept the value in brackets)"))
+var errWizardQuit = errors.New("interactive setup cancelled")
+
+type wizardOptions struct {
+	Root         string
+	Workers      int
+	TopN         int
+	CountLinks   bool
+	JSON         bool
+	HTML         string
+	Open         bool
+	Dupes        bool
+	AI           bool
+	Model        string
+	LowIntegrity bool
+	Exclusions   exclusionFlags
+	APIKey       string
+}
+
+func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions) (wizardOptions, error) {
+	opts := d
+
+	fmt.Fprintln(out, c.bold("Scoria interactive setup"))
+	fmt.Fprintln(out, c.dim("Press Enter to accept the value in brackets."))
 	fmt.Fprintln(out)
 
 	drives := listDrives()
 	if len(drives) > 0 {
 		fmt.Fprintln(out, c.bold("Available drives:"))
-		for i, d := range drives {
-			if d.label != "" {
-				fmt.Fprintf(out, "  %d. %-4s %s\n", i+1, d.root, c.dim(d.label))
-			} else {
-				fmt.Fprintf(out, "  %d. %s\n", i+1, d.root)
+		for i, dr := range drives {
+			line := fmt.Sprintf("  %d. %-4s", i+1, dr.root)
+			if dr.label != "" {
+				line += " " + dr.label
 			}
+			if free := freeSpace(dr.root); free != "" {
+				line += " (" + free + " free)"
+			}
+			fmt.Fprintln(out, line)
 		}
 		fmt.Fprintln(out)
 	}
 	fmt.Fprintln(out, c.dim("Enter a number, a directory path, or press Enter for the current directory."))
-	root, err := askRoot(r, out, c, "Root directory", defaults.Root, drives)
+	root, err := askRoot(r, out, c, "Root directory", opts.Root, drives)
 	if err != nil {
-		return defaults, jsonDefault, err
+		return d, err
 	}
-	links, err := askBool(
-		r,
-		out,
-		c,
-		"Count hard links and unique files",
-		"  On by default. Dedupes hard links by file ID for accurate totals. Opens each\n  file read-only (metadata only, no contents) and is noticeably slower.",
-		`A hard link is a second name for the same file data. Counting directory entries
-alone counts the same bytes more than once. With this on, Scoria opens each file
-read-only and asks Windows for its file ID and link count, so "unique files" and
-"unique bytes" are accurate.
-
-It does not read file contents. It does not open cloud placeholders (those are
-counted separately). It makes the scan noticeably slower - often 2-4x on a warm
-tree - because it opens every file.
-
-Y = accurate entries + unique totals (slower)
-n = entries only; unique files/bytes are reported as not computed (faster)`,
-		defaults.CountLinks,
-	)
-	if err != nil {
-		return defaults, jsonDefault, err
-	}
-	top, err := askInt(
-		r,
-		out,
-		c,
-		"Top-N entries to keep in each largest/oldest list (0 disables; does not limit the scan)",
-		defaults.TopN,
-	)
-	if err != nil {
-		return defaults, jsonDefault, err
-	}
-	workers, err := askInt(
-		r,
-		out,
-		c,
-		"Directory workers (0 = 2x logical CPUs; one directory per worker)",
-		defaults.Workers,
-	)
-	if err != nil {
-		return defaults, jsonDefault, err
-	}
-	jsonOut, err := askFormat(r, out, c, jsonDefault)
-	if err != nil {
-		return defaults, jsonDefault, err
-	}
-
-	opts := defaults
 	opts.Root = root
-	opts.CountLinks = links
-	opts.TopN = top
-	opts.Workers = workers
-	return opts, jsonOut, nil
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, c.bold("How thorough should the scan be?"))
+	fmt.Fprintln(out, "  1. Standard - metadata only; count hard links for accurate totals (default)")
+	fmt.Fprintln(out, "  2. Fast     - metadata only; skip hard-link accounting (unique totals not computed)")
+	defDepth := 1
+	if !opts.CountLinks {
+		defDepth = 2
+	}
+	depth, err := askMenu(r, out, c, "Scan depth", 2, defDepth)
+	if err != nil {
+		return d, err
+	}
+	opts.CountLinks = depth == 1
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, c.bold("Extra analysis (comma-separated; Enter for none):"))
+	fmt.Fprintln(out, "  1. Verify duplicates - hash same-size files >= 1 MiB (reads candidate contents)")
+	fmt.Fprintln(out, "  2. AI review         - send a redacted, path-free summary to OpenRouter")
+	dupes, ai, err := askAnalysis(r, out, c, opts.Dupes, opts.AI)
+	if err != nil {
+		return d, err
+	}
+	opts.Dupes = dupes
+	opts.AI = ai
+	if opts.AI {
+		if opts.APIKey == "" {
+			fmt.Fprintln(out, c.yellow("AI review needs SCORIA_API_KEY or OPENROUTER_API_KEY; AI review is off."))
+			opts.AI = false
+		} else {
+			if strings.TrimSpace(opts.Model) == "" {
+				model, err := readLine(r, out, c, "OpenRouter model ID (blank skips AI review)", "")
+				if err != nil {
+					return d, err
+				}
+				if model == "" {
+					opts.AI = false
+				} else {
+					opts.Model = model
+				}
+			}
+			if opts.AI {
+				fmt.Fprintln(out, c.dim("AI review sends only the redacted payload; no paths or examples."))
+			}
+		}
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, c.bold("Output:"))
+	fmt.Fprintln(out, "  1. HTML report, opened in your browser (default)")
+	fmt.Fprintln(out, "  2. Console summary in this window")
+	fmt.Fprintln(out, "  3. JSON digest to stdout")
+	defOutput := 1
+	if opts.JSON {
+		defOutput = 3
+	}
+	output, err := askMenu(r, out, c, "Output format", 3, defOutput)
+	if err != nil {
+		return d, err
+	}
+	switch output {
+	case 2:
+		opts.JSON = false
+		opts.HTML = ""
+	case 3:
+		opts.JSON = true
+		opts.HTML = ""
+	default:
+		opts.JSON = false
+		if opts.LowIntegrity && opts.HTML != "-" {
+			fmt.Fprintln(out, c.yellow("Low integrity cannot write an HTML report file; using console output instead."))
+			opts.HTML = ""
+			opts.Open = false
+			break
+		}
+		path, err := askReportPath(r, out, c, opts.HTML)
+		if err != nil {
+			return d, err
+		}
+		opts.HTML = path
+		if path != "-" {
+			opts.Open, err = askBool(
+				r,
+				out,
+				c,
+				"Open the report when it is ready",
+				"",
+				"Y opens the finished report in your default browser. n leaves it on disk and prints the path.",
+				opts.Open,
+			)
+			if err != nil {
+				return d, err
+			}
+		}
+	}
+
+	for {
+		printPlan(out, c, opts)
+		value, err := readLine(r, out, c, "Start scan (a = advanced options, q = quit)", "")
+		if err != nil {
+			return d, err
+		}
+		switch strings.ToLower(value) {
+		case "", "y", "yes", "start":
+			return opts, nil
+		case "a", "advanced":
+			if err := promptAdvanced(r, out, c, &opts); err != nil {
+				return d, err
+			}
+		case "q", "quit":
+			return d, errWizardQuit
+		default:
+			fmt.Fprintln(out, c.yellow("Press Enter to start, a for advanced options, or q to quit."))
+		}
+	}
+}
+
+func promptAdvanced(r *bufio.Reader, out io.Writer, c *colorizer, o *wizardOptions) error {
+	for {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, c.bold("Advanced options"))
+		fmt.Fprintf(out, "  1. Top-N per largest/oldest list: %d\n", o.TopN)
+		fmt.Fprintf(out, "  2. Directory workers: %s\n", workerText(o.Workers))
+		fmt.Fprintf(out, "  3. Add excluded directory (%s)\n", customRuleText(customExclusionCount(o.Exclusions)))
+		fmt.Fprintln(out, "  4. Add excluded glob")
+		fmt.Fprintln(out, "  5. Add excluded extension")
+		fmt.Fprintln(out, "  6. Add excluded filename")
+		fmt.Fprintf(out, "  7. Exclusion file: %s\n", exclusionFileText(o.Exclusions))
+		fmt.Fprintf(out, "  8. Default exclusion config: %s\n", onOff(!o.Exclusions.noConfig))
+		fmt.Fprintf(out, "  9. Low integrity: %s\n", onOff(o.LowIntegrity))
+		fmt.Fprintln(out, "  b. Back")
+		value, err := readLine(r, out, c, "Advanced", "b")
+		if err != nil {
+			return err
+		}
+		switch strings.ToLower(value) {
+		case "", "b", "back":
+			return nil
+		case "1":
+			top, err := askInt(r, out, c, "Top-N entries to keep in each list (0 disables)", o.TopN)
+			if err != nil {
+				return err
+			}
+			o.TopN = top
+		case "2":
+			workers, err := askInt(r, out, c, "Directory workers (0 = 2x logical CPUs)", o.Workers)
+			if err != nil {
+				return err
+			}
+			o.Workers = workers
+		case "3", "4", "5", "6":
+			labels := map[string][2]string{
+				"3": {"Directory to exclude", "dirs"},
+				"4": {"Glob pattern to exclude", "globs"},
+				"5": {"File extension to exclude (for example .log)", "exts"},
+				"6": {"Filename to exclude (for example Thumbs.db)", "names"},
+			}[value]
+			entry, err := readLine(r, out, c, labels[0], "")
+			if err != nil {
+				return err
+			}
+			entry = trimQuotes(strings.TrimSpace(entry))
+			if entry != "" {
+				switch labels[1] {
+				case "dirs":
+					o.Exclusions.dirs = append(o.Exclusions.dirs, entry)
+				case "globs":
+					o.Exclusions.globs = append(o.Exclusions.globs, entry)
+				case "exts":
+					o.Exclusions.exts = append(o.Exclusions.exts, entry)
+				case "names":
+					o.Exclusions.names = append(o.Exclusions.names, entry)
+				}
+			}
+		case "7":
+			path, err := readLine(r, out, c, "Exclusion file (blank keeps current)", o.Exclusions.config)
+			if err != nil {
+				return err
+			}
+			path = trimQuotes(strings.TrimSpace(path))
+			if path != "" {
+				o.Exclusions.config = path
+			}
+		case "8":
+			o.Exclusions.noConfig = !o.Exclusions.noConfig
+		case "9":
+			low, err := askBool(
+				r,
+				out,
+				c,
+				"Lower the process to low integrity",
+				"",
+				"Low integrity limits what the process can write. Scoria never writes during a scan;\nwith this on, an HTML report file is not available, so output falls back to the console.",
+				o.LowIntegrity,
+			)
+			if err != nil {
+				return err
+			}
+			if low && o.HTML != "" && o.HTML != "-" {
+				fmt.Fprintf(out, c.yellow("Low integrity cannot write an HTML report file; switching output to console (%s).\n"), o.HTML)
+				o.HTML = ""
+				o.Open = false
+			}
+			o.LowIntegrity = low
+		default:
+			fmt.Fprintln(out, c.yellow("Please enter a number from 1 to 9, or b to go back."))
+		}
+	}
+}
+
+func askAnalysis(r *bufio.Reader, out io.Writer, c *colorizer, defDupes, defAI bool) (bool, bool, error) {
+	hint := "none"
+	switch {
+	case defDupes && defAI:
+		hint = "1,2"
+	case defDupes:
+		hint = "1"
+	case defAI:
+		hint = "2"
+	}
+	for {
+		value, err := readLine(r, out, c, "Extra analysis", hint)
+		if err != nil {
+			return false, false, err
+		}
+		if value == "" {
+			return defDupes, defAI, nil
+		}
+		value = strings.ToLower(value)
+		if value == "none" || value == "0" || value == "-" {
+			return false, false, nil
+		}
+		var dupes, ai, invalid bool
+		for _, part := range strings.FieldsFunc(value, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '+'
+		}) {
+			switch part {
+			case "1":
+				dupes = true
+			case "2":
+				ai = true
+			default:
+				invalid = true
+			}
+		}
+		if invalid {
+			fmt.Fprintln(out, c.yellow("Please enter 1, 2, 1,2, or none."))
+			continue
+		}
+		return dupes, ai, nil
+	}
+}
+
+func askMenu(r *bufio.Reader, out io.Writer, c *colorizer, label string, max, def int) (int, error) {
+	for {
+		value, err := readLine(r, out, c, label, strconv.Itoa(def))
+		if err != nil {
+			return 0, err
+		}
+		if value == "" {
+			return def, nil
+		}
+		n, err := strconv.Atoi(value)
+		if err == nil && n >= 1 && n <= max {
+			return n, nil
+		}
+		if max == 2 {
+			fmt.Fprintln(out, c.yellow("Please enter 1 or 2."))
+		} else {
+			fmt.Fprintln(out, c.yellow("Please enter 1, 2, or 3."))
+		}
+	}
 }
 
 func askRoot(r *bufio.Reader, out io.Writer, c *colorizer, label, def string, drives []driveChoice) (string, error) {
@@ -125,6 +368,78 @@ func askRoot(r *bufio.Reader, out io.Writer, c *colorizer, label, def string, dr
 		}
 		return clean, nil
 	}
+}
+
+func askReportPath(r *bufio.Reader, out io.Writer, c *colorizer, def string) (string, error) {
+	if def == "-" {
+		return "-", nil
+	}
+	if def == "" {
+		def = defaultReportPath()
+	}
+	for {
+		value, err := readLine(r, out, c, "Report path", def)
+		if err != nil {
+			return "", err
+		}
+		if value == "" {
+			value = def
+		}
+		value = trimQuotes(value)
+		if value == "-" {
+			return "-", nil
+		}
+		abs, err := filepath.Abs(filepath.Clean(value))
+		if err != nil {
+			fmt.Fprintf(out, "%s %q: %v\n", c.red("Cannot use"), value, err)
+			continue
+		}
+		parent, err := os.Stat(filepath.Dir(abs))
+		if err != nil || !parent.IsDir() {
+			fmt.Fprintf(out, "%s %q: directory does not exist\n", c.red("Cannot use"), value)
+			continue
+		}
+		info, err := os.Stat(abs)
+		if err == nil && info.IsDir() {
+			fmt.Fprintf(out, "%s %q: is a directory\n", c.red("Cannot use"), value)
+			continue
+		}
+		if err == nil {
+			overwrite, err := askBool(
+				r,
+				out,
+				c,
+				"Report file already exists; overwrite it",
+				"",
+				"Y replaces the existing file at this path. n keeps it and asks for another path.",
+				false,
+			)
+			if err != nil {
+				return "", err
+			}
+			if !overwrite {
+				continue
+			}
+		}
+		return abs, nil
+	}
+}
+
+func defaultReportPath() string {
+	base, err := os.UserHomeDir()
+	if err != nil || base == "" {
+		if wd, err := os.Getwd(); err == nil {
+			base = wd
+		}
+	}
+	if base == "" {
+		return "scoria-report.html"
+	}
+	path := filepath.Join(base, "scoria-report.html")
+	if _, err := os.Stat(path); err == nil {
+		path = filepath.Join(base, "scoria-report-"+time.Now().Format("20060102-150405")+".html")
+	}
+	return path
 }
 
 func askBool(r *bufio.Reader, out io.Writer, c *colorizer, label, detail, help string, def bool) (bool, error) {
@@ -181,30 +496,6 @@ func askInt(r *bufio.Reader, out io.Writer, c *colorizer, label string, def int)
 	}
 }
 
-func askFormat(r *bufio.Reader, out io.Writer, c *colorizer, jsonDefault bool) (bool, error) {
-	fmt.Fprintln(out)
-	hint := "1"
-	if jsonDefault {
-		hint = "2"
-	}
-	for {
-		value, err := readLine(r, out, c, "Output: (1) console (2) JSON", hint)
-		if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(value) {
-		case "":
-			return jsonDefault, nil
-		case "1", "console":
-			return false, nil
-		case "2", "json":
-			return true, nil
-		default:
-			fmt.Fprintln(out, c.yellow("Please enter 1 for console or 2 for JSON."))
-		}
-	}
-}
-
 func readLine(r *bufio.Reader, out io.Writer, c *colorizer, label, hint string) (string, error) {
 	if hint != "" {
 		fmt.Fprintf(out, "%s [%s]: ", c.cyan(label), hint)
@@ -219,6 +510,125 @@ func readLine(r *bufio.Reader, out io.Writer, c *colorizer, label, hint string) 
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
+}
+
+func printPlan(out io.Writer, c *colorizer, o wizardOptions) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, c.bold("Ready to scan"))
+	fmt.Fprintf(out, "  %-12s %s\n", "Scan:", describeRoot(o.Root))
+	mode := "standard (hard links counted)"
+	if !o.CountLinks {
+		mode = "fast (hard links not counted)"
+	}
+	fmt.Fprintf(out, "  %-12s %s\n", "Mode:", mode)
+	duplicates := "off"
+	if o.Dupes {
+		duplicates = "verify (reads candidate contents >= 1 MiB)"
+	}
+	fmt.Fprintf(out, "  %-12s %s\n", "Duplicates:", duplicates)
+	ai := "off"
+	if o.AI {
+		ai = o.Model + " (redacted payload)"
+	}
+	fmt.Fprintf(out, "  %-12s %s\n", "AI review:", ai)
+	fmt.Fprintf(out, "  %-12s %s\n", "Output:", describeOutput(o))
+	fmt.Fprintf(out, "  %-12s %s\n", "Exclusions:", describeExclusions(o.Exclusions))
+	fmt.Fprintf(out, "  %-12s top %d, workers %s\n", "Advanced:", o.TopN, workerText(o.Workers))
+	if o.LowIntegrity {
+		fmt.Fprintf(out, "  %-12s low (HTML report file disabled)\n", "Integrity:")
+	}
+	fmt.Fprintln(out)
+}
+
+func describeRoot(root string) string {
+	shown := root
+	if abs, err := filepath.Abs(root); err == nil {
+		shown = abs
+	}
+	if free := freeSpace(root); free != "" {
+		shown += " (" + free + " free)"
+	}
+	return shown
+}
+
+func describeOutput(o wizardOptions) string {
+	switch {
+	case o.HTML == "-":
+		return "HTML report to stdout"
+	case o.HTML != "":
+		text := "HTML report -> " + o.HTML
+		if o.Open {
+			text += " (opens in browser)"
+		}
+		return text
+	case o.JSON:
+		return "JSON digest to stdout"
+	default:
+		return "console summary"
+	}
+}
+
+func describeExclusions(e exclusionFlags) string {
+	parts := []string{"sensitive preset"}
+	if n := customExclusionCount(e); n > 0 {
+		parts = append(parts, customRuleText(n))
+	}
+	if e.config != "" {
+		parts = append(parts, "file "+e.config)
+	}
+	if e.noConfig {
+		parts = append(parts, "default config off")
+	} else if e.config == "" {
+		parts = append(parts, "default config on")
+	}
+	return strings.Join(parts, "; ")
+}
+
+func customExclusionCount(e exclusionFlags) int {
+	return len(e.dirs) + len(e.globs) + len(e.exts) + len(e.names)
+}
+
+func customRuleText(n int) string {
+	if n == 1 {
+		return "1 custom rule"
+	}
+	return fmt.Sprintf("%d custom rules", n)
+}
+
+func exclusionFileText(e exclusionFlags) string {
+	if e.config == "" {
+		return "(none; default config applies)"
+	}
+	return e.config
+}
+
+func workerText(workers int) string {
+	if workers == 0 {
+		return "auto (2x CPUs)"
+	}
+	return strconv.Itoa(workers)
+}
+
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
+}
+
+func freeSpace(path string) string {
+	name, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return ""
+	}
+	var available, total, free uint64
+	if err := windows.GetDiskFreeSpaceEx(name, &available, &total, &free); err != nil {
+		return ""
+	}
+	if total == 0 {
+		return ""
+	}
+	return humanBytes(int64(free))
 }
 
 type driveChoice struct {

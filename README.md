@@ -58,7 +58,7 @@ The result is a single self-contained `.exe`. `dist/` is ignored by git.
 # scan a directory
 .\dist\scoria.exe -root C:\Users\me
 
-# interactive setup: root, hard-link counting, duplicate hashing, top-N, workers
+# guided setup: root, depth, analysis, output, then a confirmation summary
 .\dist\scoria.exe -interactive
 
 # verify duplicate candidates by content, sorted by size
@@ -90,9 +90,11 @@ $env:SCORIA_API_KEY = "sk-or-v1-..."
 .\dist\scoria.exe -root C:\Users\me -low-integrity
 ```
 
-Double-clicking the exe, or running it with no arguments in a console, starts
-interactive setup and waits for Enter before exiting. Pass any flag to run
-non-interactively.
+Double-clicking the exe, or running it with no arguments in a console, starts the
+guided setup: scan root, depth (fast or hard-link counting), optional duplicate
+verification and AI review, output format (HTML report, console, or JSON), advanced
+tuning, and a confirmation summary. It waits for Enter before exiting. Pass any flag
+to run non-interactively.
 
 | Flag | Meaning |
 |---|---|
@@ -107,7 +109,7 @@ non-interactively.
 | `-exclude-name` | exclude an exact filename (repeatable) |
 | `-exclude-file` | read exclusions from a text file |
 | `-no-config` | do not load the default `%APPDATA%\Scoria\exclusions.txt` |
-| `-interactive` | prompt for options, then offer a post-scan priority/size sort toggle |
+| `-interactive` | guided setup for root, depth, analysis, output, and advanced options; then offer a post-scan priority/size sort toggle |
 | `-low-integrity` | lower the process to low mandatory integrity before scanning; file report output is disabled |
 | `-sort` | recommendation order: `priority` (default) or `size` |
 | `-json` | write the versioned digest to stdout |
