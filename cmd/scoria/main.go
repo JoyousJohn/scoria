@@ -118,7 +118,7 @@ func main() {
 			if errors.Is(err, errWizardQuit) {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		*root = wizard.Root
@@ -177,7 +177,7 @@ func main() {
 
 	exclusionRules, customRules, configSource, configRules, buildErr := buildExclusionRules(exclusionArgs)
 	if buildErr != nil {
-		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), buildErr)
+		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), buildErr)
 		os.Exit(2)
 	}
 	if configSource != "" {
@@ -194,10 +194,10 @@ func main() {
 
 	if *lowIntegrity {
 		if err := integrity.LowerToLow(); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow("low integrity: scanning with a low-integrity token"))
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.warning("low integrity: scanning with a low-integrity token"))
 	}
 
 	progress := &progressLine{out: os.Stderr, enabled: progressEnabled(*progressMode, os.Stderr)}
@@ -208,14 +208,14 @@ func main() {
 	result, err := scan.Walk(cfg)
 	progress.finish()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+		fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 		os.Exit(2)
 	}
 	warnExclusionRules(os.Stderr, stderrColor, customRules, result.Aggregate)
 
 	var duplicateResult *dupes.Result
 	if *verifyDupes {
-		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow(
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.warning(
 			"duplicate check: reading contents of same-size candidates; the metadata-only guarantee does not apply to this phase",
 		))
 		collector := dupes.NewCollector(result.Aggregate.SizeCounts, dupes.Options{Root: result.Root})
@@ -233,10 +233,10 @@ func main() {
 		_, err := scan.Walk(dupCfg)
 		dupProgress.finish()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
-		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.dim(fmt.Sprintf(
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.muted(fmt.Sprintf(
 			"duplicate check: hashing %s candidate files", commas(collector.CandidateCount()),
 		)))
 		duplicateResult = collector.Result()
@@ -289,7 +289,7 @@ func main() {
 	if *discover || *discoveryPreview {
 		names, err := runDiscovery(cfg, result.Root, progress.enabled)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		discoveryPayload := analyzer.BuildDiscoveryPayload(doc, names)
@@ -298,7 +298,7 @@ func main() {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(discoveryPayload); err != nil {
-				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 				os.Exit(2)
 			}
 			pauseIfRequested(*pause)
@@ -310,14 +310,14 @@ func main() {
 			BaseURL: apiBase,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		fmt.Fprintf(os.Stderr, "discovery: sending %s directory names to %s model %s\n",
 			commas(uint64(len(discoveryPayload.DirectoryNames))), endpointLabel(apiBase), *model)
 		discoveryResult, err := client.Discover(context.Background(), discoveryPayload)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s discovery failed: %v\n", stderrColor.yellow("warning:"), err)
+			fmt.Fprintf(os.Stderr, "%s discovery failed: %v\n", stderrColor.warning("warning:"), err)
 		} else {
 			doc.Discovery = digestDiscovery(discoveryResult)
 		}
@@ -326,7 +326,7 @@ func main() {
 	if *useAI {
 		payload := analyzer.BuildPayload(doc)
 		if len(payload.Candidates) == 0 {
-			fmt.Fprintf(os.Stderr, "%s\n", stderrColor.yellow("cloud analysis: no candidates; request skipped"))
+			fmt.Fprintf(os.Stderr, "%s\n", stderrColor.warning("cloud analysis: no candidates; request skipped"))
 		} else {
 			client, err := openrouter.New(openrouter.Config{
 				APIKey:  apiKey,
@@ -334,14 +334,14 @@ func main() {
 				BaseURL: apiBase,
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 				os.Exit(2)
 			}
 			fmt.Fprintf(os.Stderr, "cloud analysis: sending %s candidates to %s model %s\n",
 				commas(uint64(len(payload.Candidates))), endpointLabel(apiBase), *model)
 			result, err := client.Analyze(context.Background(), payload)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s cloud analysis failed: %v\n", stderrColor.yellow("warning:"), err)
+				fmt.Fprintf(os.Stderr, "%s cloud analysis failed: %v\n", stderrColor.warning("warning:"), err)
 			} else {
 				doc.Analysis = digestAnalysis(result, doc.Recommendations)
 			}
@@ -353,7 +353,7 @@ func main() {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(analyzer.BuildPayload(doc)); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		pauseIfRequested(*pause)
@@ -363,29 +363,29 @@ func main() {
 	if *htmlPath != "" {
 		var buf bytes.Buffer
 		if err := report.Render(&buf, doc); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		if *htmlPath == "-" {
 			if _, err := os.Stdout.Write(buf.Bytes()); err != nil {
-				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+				fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 				os.Exit(2)
 			}
 			pauseIfRequested(*pause)
 			return
 		}
 		if err := os.WriteFile(*htmlPath, buf.Bytes(), 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		abs := *htmlPath
 		if p, err := filepath.Abs(*htmlPath); err == nil {
 			abs = p
 		}
-		fmt.Fprintf(os.Stderr, "report written: %s\n", abs)
+		fmt.Fprintf(os.Stderr, "%s\n", stderrColor.success("report written: "+abs))
 		if *openReport {
 			if err := openInBrowser(abs); err != nil {
-				fmt.Fprintf(os.Stderr, "%s could not open report: %v\n", stderrColor.yellow("warning:"), err)
+				fmt.Fprintf(os.Stderr, "%s could not open report: %v\n", stderrColor.warning("warning:"), err)
 			}
 		}
 		pauseIfRequested(*pause)
@@ -396,7 +396,7 @@ func main() {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(doc); err != nil {
-			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.red("scoria:"), err)
+			fmt.Fprintf(os.Stderr, "%s %v\n", stderrColor.failure("scoria:"), err)
 			os.Exit(2)
 		}
 		pauseIfRequested(*pause)
@@ -423,9 +423,9 @@ func printDiscovery(w io.Writer, c *colorizer, discovery *digest.Discovery) {
 		header += ", " + discovery.Model
 	}
 	header += "; review before acting):"
-	fmt.Fprintf(w, "\n%s\n", c.bold(header))
+	fmt.Fprintf(w, "\n%s\n", c.heading(header))
 	for _, pattern := range discovery.Patterns {
-		fmt.Fprintf(w, "  %s  %s files  %s  [%s]\n", c.bold(pattern.Name), commas(pattern.Files), humanBytes(pattern.Bytes), pattern.Confidence)
+		fmt.Fprintf(w, "  %s  %s files  %s  [%s]\n", c.bold(pattern.Name), commas(pattern.Files), humanBytes(pattern.Bytes), c.muted(pattern.Confidence))
 		fmt.Fprintf(w, "      %s\n", pattern.Reason)
 	}
 }
@@ -439,13 +439,13 @@ func printAnalysis(w io.Writer, c *colorizer, analysis *digest.Analysis) {
 		header += ", " + analysis.Model
 	}
 	header += "):"
-	fmt.Fprintf(w, "\n%s\n", c.bold(header))
+	fmt.Fprintf(w, "\n%s\n", c.heading(header))
 	for _, finding := range analysis.Findings {
 		title := finding.Title
 		if title == "" {
 			title = finding.ID
 		}
-		fmt.Fprintf(w, "  %s [%d] %s\n", c.dim(finding.ID), finding.Rank, c.bold(title))
+		fmt.Fprintf(w, "  %s [%d] %s\n", c.muted(finding.ID), finding.Rank, c.bold(title))
 		fmt.Fprintf(w, "      %s\n", finding.Explanation)
 	}
 }
@@ -454,9 +454,9 @@ func printDuplicateStats(w io.Writer, c *colorizer, result *dupes.Result) {
 	if result == nil {
 		return
 	}
-	fmt.Fprintf(w, "\n%s\n", c.bold("duplicate check:"))
+	fmt.Fprintf(w, "\n%s\n", c.heading("duplicate check:"))
 	fmt.Fprintf(w, "  candidates: %s files, hashed: %s, read: %s, read errors: %s\n",
-		commas(result.Candidates), commas(result.Hashed), humanBytes(result.BytesRead), commas(result.ReadErrors))
+		commas(result.Candidates), commas(result.Hashed), humanBytes(result.BytesRead), coloredCount(c, result.ReadErrors))
 	fmt.Fprintf(w, "  skipped: %s protected paths, %s hard-link entries\n",
 		commas(result.SkippedProtected), commas(result.SkippedHardlinks))
 }
@@ -527,23 +527,23 @@ func printRecommendations(w io.Writer, c *colorizer, recs []rules.Recommendation
 	if contentsRead {
 		header = "recommendations (rules only; duplicate candidates were content-hashed - verify before acting):"
 	}
-	fmt.Fprintf(w, "\n%s\n", c.bold(header))
+	fmt.Fprintf(w, "\n%s\n", c.heading(header))
 	if len(recs) == 0 {
-		fmt.Fprintf(w, "  %s\n", c.dim("none"))
+		fmt.Fprintf(w, "  %s\n", c.muted("none"))
 		return
 	}
 	for i, r := range recs {
-		fmt.Fprintf(w, "  %2d. [%s] %s\n", i+1, r.Confidence, c.bold(r.Title))
+		fmt.Fprintf(w, "  %2d. [%s] %s\n", i+1, c.muted(string(r.Confidence)), c.bold(r.Title))
 		fmt.Fprintf(w, "      %s %s, %s. %s\n", commas(r.Items), itemWord(r.Items), humanBytes(r.Bytes), r.Detail)
 		for _, example := range r.Examples {
-			fmt.Fprintf(w, "      e.g. %s\n", c.dim(example))
+			fmt.Fprintf(w, "      e.g. %s\n", c.muted(example))
 		}
 	}
 }
 
 func printSummary(w io.Writer, c *colorizer, result *scan.Result, entriesPerSecond float64, top int, countLinks bool) {
 	agg := result.Aggregate
-	fmt.Fprintf(w, "%s\n", c.bold("scoria scan (read-only)"))
+	fmt.Fprintf(w, "%s\n", c.heading("scoria scan (read-only)"))
 	fmt.Fprintf(w, "root:       %s\n", result.Root)
 	fmt.Fprintf(w, "workers:    %d\ntop:        %d\nelapsed:    %s\nthroughput: %s entries/sec\n\n",
 		result.Workers, top, result.Elapsed.Round(time.Millisecond), commasFloat(entriesPerSecond))
@@ -553,8 +553,8 @@ func printSummary(w io.Writer, c *colorizer, result *scan.Result, entriesPerSeco
 		fmt.Fprintf(w, "unique files:   %s\n", commas(agg.Totals.UniqueFiles))
 		fmt.Fprintf(w, "hardlink extra: %s\n", commas(agg.Totals.HardlinkExtra))
 	} else {
-		fmt.Fprintf(w, "unique files:   %s\n", c.yellow("not computed (-links=false)"))
-		fmt.Fprintf(w, "hardlink extra: %s\n", c.yellow("not computed (-links=false)"))
+		fmt.Fprintf(w, "unique files:   %s\n", c.warning("not computed (-links=false)"))
+		fmt.Fprintf(w, "hardlink extra: %s\n", c.warning("not computed (-links=false)"))
 	}
 	fmt.Fprintf(w, "files:          %s\n", commas(agg.Totals.Files))
 	fmt.Fprintf(w, "directories:    %s\n", commas(agg.Totals.Directories))
@@ -563,35 +563,35 @@ func printSummary(w io.Writer, c *colorizer, result *scan.Result, entriesPerSeco
 	fmt.Fprintf(w, "unique bytes:   %s\n\n", humanBytes(agg.Totals.UniqueBytes))
 
 	if len(agg.Largest) > 0 {
-		fmt.Fprintf(w, "%s\n", c.bold("largest files:"))
+		fmt.Fprintf(w, "%s\n", c.heading("largest files:"))
 		for i, f := range agg.Largest {
-			fmt.Fprintf(w, "  %2d. %10s  %s\n", i+1, humanBytes(f.Size), c.dim(f.Path))
+			fmt.Fprintf(w, "  %2d. %10s  %s\n", i+1, humanBytes(f.Size), c.muted(f.Path))
 		}
 		fmt.Fprintln(w)
 	}
 
 	if len(agg.Stalest) > 0 {
-		fmt.Fprintf(w, "%s\n", c.bold("oldest files by last write:"))
+		fmt.Fprintf(w, "%s\n", c.heading("oldest files by last write:"))
 		for i, f := range agg.Stalest {
 			stamp := "unknown"
 			if !f.ModTime.IsZero() {
 				stamp = f.ModTime.Format("2006-01-02")
 			}
-			fmt.Fprintf(w, "  %2d. %10s  %s  %s\n", i+1, stamp, humanBytes(f.Size), c.dim(f.Path))
+			fmt.Fprintf(w, "  %2d. %10s  %s  %s\n", i+1, stamp, humanBytes(f.Size), c.muted(f.Path))
 		}
 		fmt.Fprintln(w)
 	}
 
 	if len(agg.Directories) > 0 {
-		fmt.Fprintf(w, "%s\n", c.bold("largest directories (direct contents):"))
+		fmt.Fprintf(w, "%s\n", c.heading("largest directories (direct contents):"))
 		for i, d := range agg.Directories {
-			fmt.Fprintf(w, "  %2d. %10s  %s files  %s\n", i+1, humanBytes(d.Bytes), commas(d.Files), c.dim(d.Path))
+			fmt.Fprintf(w, "  %2d. %10s  %s files  %s\n", i+1, humanBytes(d.Bytes), commas(d.Files), c.muted(d.Path))
 		}
 		fmt.Fprintln(w)
 	}
 
 	if len(agg.Extensions) > 0 {
-		fmt.Fprintf(w, "%s\n", c.bold("extensions:"))
+		fmt.Fprintf(w, "%s\n", c.heading("extensions:"))
 		limit := len(agg.Extensions)
 		if limit > 12 {
 			limit = 12
@@ -606,14 +606,14 @@ func printSummary(w io.Writer, c *colorizer, result *scan.Result, entriesPerSeco
 		fmt.Fprintln(w)
 	}
 
-	fmt.Fprintf(w, "%s\n", c.bold("excluded by rules (not enumerated or aggregated):"))
+	fmt.Fprintf(w, "%s\n", c.heading("excluded by rules (not enumerated or aggregated):"))
 	if len(agg.Excluded) == 0 {
-		fmt.Fprintf(w, "  %s\n", c.dim("none matched"))
+		fmt.Fprintf(w, "  %s\n", c.success("none matched"))
 	} else {
 		for _, e := range agg.Excluded {
 			suffix := ""
 			if e.Sensitive {
-				suffix = c.dim("  [sensitive preset, aggregate only]")
+				suffix = c.muted("  [sensitive preset, aggregate only]")
 			}
 			if e.Dirs > 0 {
 				fmt.Fprintf(w, "  %-32s %s dirs  %s%s\n", e.Rule, commas(e.Dirs), "(subtree not enumerated)", suffix)
@@ -626,16 +626,30 @@ func printSummary(w io.Writer, c *colorizer, result *scan.Result, entriesPerSeco
 	fmt.Fprintln(w)
 
 	s := agg.Skipped
-	fmt.Fprintf(w, "%s\n", c.yellow("skipped by the tool:"))
+	fmt.Fprintf(w, "%s\n", c.heading("skipped by the tool:"))
 	fmt.Fprintf(w, "  reparse points:      %s (%s dirs, %s files)\n",
-		commas(s.ReparsePoints), commas(s.ReparsePointDirs), commas(s.ReparsePointFiles))
+		coloredCount(c, s.ReparsePoints), coloredCount(c, s.ReparsePointDirs), coloredCount(c, s.ReparsePointFiles))
 	fmt.Fprintf(w, "  permission denied:   %s directories, %s files\n",
-		commas(s.PermissionDeniedDirs), commas(s.FileAccessDenied))
+		coloredCount(c, s.PermissionDeniedDirs), coloredCount(c, s.FileAccessDenied))
 	fmt.Fprintf(w, "  cloud placeholders:  %s (%s, not opened)\n",
-		commas(s.CloudPlaceholders), humanBytes(s.CloudPlaceholderBytes))
-	fmt.Fprintf(w, "  long path names:     %s\n", commas(s.LongPathNames))
+		coloredCount(c, s.CloudPlaceholders), coloredBytes(c, s.CloudPlaceholderBytes))
+	fmt.Fprintf(w, "  long path names:     %s\n", coloredCount(c, s.LongPathNames))
 	fmt.Fprintf(w, "  other errors:        %s directories, %s file opens\n",
-		commas(s.OtherErrors), commas(s.FileOpenErrors))
+		coloredCount(c, s.OtherErrors), coloredCount(c, s.FileOpenErrors))
+}
+
+func coloredCount(c *colorizer, n uint64) string {
+	if n == 0 {
+		return c.muted("0")
+	}
+	return c.warning(commas(n))
+}
+
+func coloredBytes(c *colorizer, n int64) string {
+	if n == 0 {
+		return c.muted("0 B")
+	}
+	return c.warning(humanBytes(n))
 }
 
 func itemWord(n uint64) string {

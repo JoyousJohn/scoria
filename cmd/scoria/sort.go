@@ -78,7 +78,7 @@ func runSortMenu(
 		case "s", "size":
 			mode = "size"
 		default:
-			fmt.Fprintln(promptOut, promptColor.yellow("Please enter p, s, or q."))
+			fmt.Fprintln(promptOut, promptColor.warning("Please enter p, s, or q."))
 			continue
 		}
 		sortRecommendations(recs, mode)

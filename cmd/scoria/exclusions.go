@@ -168,10 +168,10 @@ func warnExclusionRules(out io.Writer, c *colorizer, custom []exclude.Rule, agg 
 	}
 	for _, rule := range custom {
 		if _, ok := matched[rule.Key()]; !ok {
-			fmt.Fprintf(out, "%s exclusion rule %q matched nothing\n", c.yellow("warning:"), rule.Pattern)
+			fmt.Fprintf(out, "%s exclusion rule %q matched nothing\n", c.warning("warning:"), rule.Pattern)
 		}
 	}
 	if agg.Totals.Entries == 0 && len(agg.Excluded) > 0 {
-		fmt.Fprintf(out, "%s exclusion rules excluded every entry; check the rules\n", c.yellow("warning:"))
+		fmt.Fprintf(out, "%s exclusion rules excluded every entry; check the rules\n", c.warning("warning:"))
 	}
 }

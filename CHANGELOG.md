@@ -24,6 +24,12 @@
   verification, AI review, exclusions, and advanced tuning, with a confirmation
   summary before scanning.
 
+### Changed
+
+- Console colors now use semantic roles: green for clean outcomes, dim zero-skip
+  counts and confidence labels, and yellow only for nonzero skips and real caveats.
+  Recommendations never use success green.
+
 ## 0.1.2 - 2026-11-01
 
 ### Fixed

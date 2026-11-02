@@ -33,13 +33,17 @@ func newColorizer(f *os.File, mode string) *colorizer {
 }
 
 func autoColor(f *os.File) bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+	if colorDisabledByEnv() {
 		return false
 	}
 	return enableConsoleVT(f)
+}
+
+func colorDisabledByEnv() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return true
+	}
+	return strings.EqualFold(os.Getenv("TERM"), "dumb")
 }
 
 func enableConsoleVT(f *os.File) bool {
@@ -82,4 +86,28 @@ func (c *colorizer) yellow(s string) string {
 
 func (c *colorizer) red(s string) string {
 	return c.paint("\x1b[31m", s)
+}
+
+func (c *colorizer) success(s string) string {
+	return c.paint("\x1b[32m", s)
+}
+
+func (c *colorizer) heading(s string) string {
+	return c.bold(s)
+}
+
+func (c *colorizer) muted(s string) string {
+	return c.dim(s)
+}
+
+func (c *colorizer) accent(s string) string {
+	return c.cyan(s)
+}
+
+func (c *colorizer) warning(s string) string {
+	return c.yellow(s)
+}
+
+func (c *colorizer) failure(s string) string {
+	return c.red(s)
 }

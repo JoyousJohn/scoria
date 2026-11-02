@@ -38,13 +38,13 @@ type wizardOptions struct {
 func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions) (wizardOptions, error) {
 	opts := d
 
-	fmt.Fprintln(out, c.bold("Scoria interactive setup"))
-	fmt.Fprintln(out, c.dim("Press Enter to accept the value in brackets."))
+	fmt.Fprintln(out, c.heading("Scoria interactive setup"))
+	fmt.Fprintln(out, c.muted("Press Enter to accept the value in brackets."))
 	fmt.Fprintln(out)
 
 	drives := listDrives()
 	if len(drives) > 0 {
-		fmt.Fprintln(out, c.bold("Available drives:"))
+		fmt.Fprintln(out, c.heading("Available drives:"))
 		for i, dr := range drives {
 			line := fmt.Sprintf("  %d. %-4s", i+1, dr.root)
 			if dr.label != "" {
@@ -57,7 +57,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 		}
 		fmt.Fprintln(out)
 	}
-	fmt.Fprintln(out, c.dim("Enter a number, a directory path, or press Enter for the current directory."))
+	fmt.Fprintln(out, c.muted("Enter a number, a directory path, or press Enter for the current directory."))
 	root, err := askRoot(r, out, c, "Root directory", opts.Root, drives)
 	if err != nil {
 		return d, err
@@ -65,7 +65,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 	opts.Root = root
 
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, c.bold("How thorough should the scan be?"))
+	fmt.Fprintln(out, c.heading("How thorough should the scan be?"))
 	fmt.Fprintln(out, "  1. Standard - metadata only; count hard links for accurate totals (default)")
 	fmt.Fprintln(out, "  2. Fast     - metadata only; skip hard-link accounting (unique totals not computed)")
 	defDepth := 1
@@ -79,7 +79,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 	opts.CountLinks = depth == 1
 
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, c.bold("Extra analysis (comma-separated; Enter for none):"))
+	fmt.Fprintln(out, c.heading("Extra analysis (comma-separated; Enter for none):"))
 	fmt.Fprintln(out, "  1. Verify duplicates - hash same-size files >= 1 MiB (reads candidate contents)")
 	fmt.Fprintln(out, "  2. AI review         - send a redacted, path-free summary to your configured AI endpoint")
 	dupes, ai, err := askAnalysis(r, out, c, opts.Dupes, opts.AI)
@@ -95,7 +95,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 		}
 		opts.BaseURL = base
 		if opts.APIKey == "" && openrouter.KeyRequired(opts.BaseURL) {
-			fmt.Fprintln(out, c.yellow("AI review needs SCORIA_API_KEY or OPENROUTER_API_KEY; AI review is off."))
+			fmt.Fprintln(out, c.warning("AI review needs SCORIA_API_KEY or OPENROUTER_API_KEY; AI review is off."))
 			opts.AI = false
 		} else {
 			if strings.TrimSpace(opts.Model) == "" {
@@ -110,13 +110,13 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 				}
 			}
 			if opts.AI {
-				fmt.Fprintln(out, c.dim("AI review sends only the redacted payload; no paths or examples."))
+				fmt.Fprintln(out, c.muted("AI review sends only the redacted payload; no paths or examples."))
 			}
 		}
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, c.bold("Output:"))
+	fmt.Fprintln(out, c.heading("Output:"))
 	fmt.Fprintln(out, "  1. HTML report, opened in your browser (default)")
 	fmt.Fprintln(out, "  2. Console summary in this window")
 	fmt.Fprintln(out, "  3. JSON digest to stdout")
@@ -138,7 +138,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 	default:
 		opts.JSON = false
 		if opts.LowIntegrity && opts.HTML != "-" {
-			fmt.Fprintln(out, c.yellow("Low integrity cannot write an HTML report file; using console output instead."))
+			fmt.Fprintln(out, c.warning("Low integrity cannot write an HTML report file; using console output instead."))
 			opts.HTML = ""
 			opts.Open = false
 			break
@@ -180,7 +180,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 		case "q", "quit":
 			return d, errWizardQuit
 		default:
-			fmt.Fprintln(out, c.yellow("Press Enter to start, a for advanced options, or q to quit."))
+			fmt.Fprintln(out, c.warning("Press Enter to start, a for advanced options, or q to quit."))
 		}
 	}
 }
@@ -188,7 +188,7 @@ func promptOptions(r *bufio.Reader, out io.Writer, c *colorizer, d wizardOptions
 func promptAdvanced(r *bufio.Reader, out io.Writer, c *colorizer, o *wizardOptions) error {
 	for {
 		fmt.Fprintln(out)
-		fmt.Fprintln(out, c.bold("Advanced options"))
+		fmt.Fprintln(out, c.heading("Advanced options"))
 		fmt.Fprintf(out, "  1. Top-N per largest/oldest list: %d\n", o.TopN)
 		fmt.Fprintf(out, "  2. Directory workers: %s\n", workerText(o.Workers))
 		fmt.Fprintf(out, "  3. Add excluded directory (%s)\n", customRuleText(customExclusionCount(o.Exclusions)))
@@ -267,13 +267,13 @@ func promptAdvanced(r *bufio.Reader, out io.Writer, c *colorizer, o *wizardOptio
 				return err
 			}
 			if low && o.HTML != "" && o.HTML != "-" {
-				fmt.Fprintf(out, c.yellow("Low integrity cannot write an HTML report file; switching output to console (%s).\n"), o.HTML)
+				fmt.Fprintf(out, c.warning("Low integrity cannot write an HTML report file; switching output to console (%s).\n"), o.HTML)
 				o.HTML = ""
 				o.Open = false
 			}
 			o.LowIntegrity = low
 		default:
-			fmt.Fprintln(out, c.yellow("Please enter a number from 1 to 9, or b to go back."))
+			fmt.Fprintln(out, c.warning("Please enter a number from 1 to 9, or b to go back."))
 		}
 	}
 }
@@ -314,7 +314,7 @@ func askAnalysis(r *bufio.Reader, out io.Writer, c *colorizer, defDupes, defAI b
 			}
 		}
 		if invalid {
-			fmt.Fprintln(out, c.yellow("Please enter 1, 2, 1,2, or none."))
+			fmt.Fprintln(out, c.warning("Please enter 1, 2, 1,2, or none."))
 			continue
 		}
 		return dupes, ai, nil
@@ -323,7 +323,7 @@ func askAnalysis(r *bufio.Reader, out io.Writer, c *colorizer, defDupes, defAI b
 
 func askProvider(r *bufio.Reader, out io.Writer, c *colorizer, current string) (string, error) {
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, c.bold("AI endpoint:"))
+	fmt.Fprintln(out, c.heading("AI endpoint:"))
 	for i, preset := range providerPresets {
 		fmt.Fprintf(out, "  %d. %s (%s)\n", i+1, preset.name, preset.baseURL)
 	}
@@ -349,11 +349,11 @@ func askProvider(r *bufio.Reader, out io.Writer, c *colorizer, current string) (
 			value = hint
 		}
 		if value == "" {
-			fmt.Fprintln(out, c.yellow("A base URL is required."))
+			fmt.Fprintln(out, c.warning("A base URL is required."))
 			continue
 		}
 		if err := openrouter.ValidateBaseURL(value); err != nil {
-			fmt.Fprintf(out, "%s %v\n", c.red("Cannot use"), err)
+			fmt.Fprintf(out, "%s %v\n", c.failure("Cannot use"), err)
 			continue
 		}
 		return strings.TrimSpace(value), nil
@@ -373,7 +373,7 @@ func askMenu(r *bufio.Reader, out io.Writer, c *colorizer, label string, max, de
 		if err == nil && n >= 1 && n <= max {
 			return n, nil
 		}
-		fmt.Fprintf(out, c.yellow("Please enter a number from 1 to %d.\n"), max)
+		fmt.Fprintf(out, c.warning("Please enter a number from 1 to %d.\n"), max)
 	}
 }
 
@@ -397,16 +397,16 @@ func askRoot(r *bufio.Reader, out io.Writer, c *colorizer, label, def string, dr
 		clean := filepath.Clean(value)
 		abs, err := filepath.Abs(clean)
 		if err != nil {
-			fmt.Fprintf(out, "%s %q: %v\n", c.red("Cannot use"), value, err)
+			fmt.Fprintf(out, "%s %q: %v\n", c.failure("Cannot use"), value, err)
 			continue
 		}
 		info, err := os.Stat(abs)
 		if err != nil {
-			fmt.Fprintf(out, "%s %q: %v\n", c.red("Cannot use"), value, err)
+			fmt.Fprintf(out, "%s %q: %v\n", c.failure("Cannot use"), value, err)
 			continue
 		}
 		if !info.IsDir() {
-			fmt.Fprintf(out, "%s %q: not a directory\n", c.red("Cannot use"), value)
+			fmt.Fprintf(out, "%s %q: not a directory\n", c.failure("Cannot use"), value)
 			continue
 		}
 		return clean, nil
@@ -434,17 +434,17 @@ func askReportPath(r *bufio.Reader, out io.Writer, c *colorizer, def string) (st
 		}
 		abs, err := filepath.Abs(filepath.Clean(value))
 		if err != nil {
-			fmt.Fprintf(out, "%s %q: %v\n", c.red("Cannot use"), value, err)
+			fmt.Fprintf(out, "%s %q: %v\n", c.failure("Cannot use"), value, err)
 			continue
 		}
 		parent, err := os.Stat(filepath.Dir(abs))
 		if err != nil || !parent.IsDir() {
-			fmt.Fprintf(out, "%s %q: directory does not exist\n", c.red("Cannot use"), value)
+			fmt.Fprintf(out, "%s %q: directory does not exist\n", c.failure("Cannot use"), value)
 			continue
 		}
 		info, err := os.Stat(abs)
 		if err == nil && info.IsDir() {
-			fmt.Fprintf(out, "%s %q: is a directory\n", c.red("Cannot use"), value)
+			fmt.Fprintf(out, "%s %q: is a directory\n", c.failure("Cannot use"), value)
 			continue
 		}
 		if err == nil {
@@ -488,7 +488,7 @@ func defaultReportPath() string {
 func askBool(r *bufio.Reader, out io.Writer, c *colorizer, label, detail, help string, def bool) (bool, error) {
 	fmt.Fprintln(out)
 	if detail != "" {
-		fmt.Fprintln(out, c.bold(label+"?"))
+		fmt.Fprintln(out, c.heading(label+"?"))
 		fmt.Fprintln(out, detail)
 		fmt.Fprintln(out)
 	}
@@ -515,7 +515,7 @@ func askBool(r *bufio.Reader, out io.Writer, c *colorizer, label, detail, help s
 		case "n", "no", "false", "0":
 			return false, nil
 		default:
-			fmt.Fprintln(out, c.yellow("Please answer y or n."))
+			fmt.Fprintln(out, c.warning("Please answer y or n."))
 		}
 	}
 }
@@ -532,7 +532,7 @@ func askInt(r *bufio.Reader, out io.Writer, c *colorizer, label string, def int)
 		}
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
-			fmt.Fprintln(out, c.yellow("Please enter a non-negative integer."))
+			fmt.Fprintln(out, c.warning("Please enter a non-negative integer."))
 			continue
 		}
 		return n, nil
@@ -541,9 +541,9 @@ func askInt(r *bufio.Reader, out io.Writer, c *colorizer, label string, def int)
 
 func readLine(r *bufio.Reader, out io.Writer, c *colorizer, label, hint string) (string, error) {
 	if hint != "" {
-		fmt.Fprintf(out, "%s [%s]: ", c.cyan(label), hint)
+		fmt.Fprintf(out, "%s [%s]: ", c.accent(label), hint)
 	} else {
-		fmt.Fprintf(out, "%s: ", c.cyan(label))
+		fmt.Fprintf(out, "%s: ", c.accent(label))
 	}
 	line, err := r.ReadString('\n')
 	if err != nil {
@@ -557,7 +557,7 @@ func readLine(r *bufio.Reader, out io.Writer, c *colorizer, label, hint string) 
 
 func printPlan(out io.Writer, c *colorizer, o wizardOptions) {
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, c.bold("Ready to scan"))
+	fmt.Fprintln(out, c.heading("Ready to scan"))
 	fmt.Fprintf(out, "  %-12s %s\n", "Scan:", describeRoot(o.Root))
 	mode := "standard (hard links counted)"
 	if !o.CountLinks {
